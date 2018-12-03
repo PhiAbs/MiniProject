@@ -1,9 +1,9 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 2; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0
-    kitti_path = 'C:/Users/phand/Documents/Images/kitti00/kitti';
+    kitti_path = '../datasets/kitti00/kitti';
     % need to set kitti_path to folder containing "00" and "poses"
     assert(exist('kitti_path', 'var') ~= 0);
     ground_truth = load([kitti_path '/poses/00.txt']);
