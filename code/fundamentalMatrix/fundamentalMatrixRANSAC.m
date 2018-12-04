@@ -4,7 +4,7 @@ function [F, bestInliers] = fundamentalMatrixRANSAC(x1s, x2s)
 % input: 
 
     % threshold
-    d = 0.5;
+    d = 0.4;
     
     bestInliers = [];
     bestNbInliers = 0;
@@ -12,7 +12,7 @@ function [F, bestInliers] = fundamentalMatrixRANSAC(x1s, x2s)
     [nx1s, T1] = normalizePoints2d(x1s);
     [nx2s, T2] = normalizePoints2d(x2s);
     
-    for k = 1:1000
+    for k = 1:3000
        rnd = randi([1, size(nx1s,2)], [1, 8]);
        F = fundamentalMatrix(nx1s(:,rnd), nx2s(:,rnd));
        dist = sampsonError(T2'*F*T1, x1s, x2s); 

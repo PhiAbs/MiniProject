@@ -12,14 +12,14 @@ function [E, inliers_b] = estimateEssentialMatrix(p1, p2, K1, K2)
 %  - E(3,3) : fundamental matrix
 %
 
-% normalize points to avoid numerical errors
+% % normalize points to avoid numerical errors
 % [p1_n,T1] = normalise2dpts(p1);
 % [p2_n,T2] = normalise2dpts(p2);
-
+% 
 % [F, inliers_b] = estimateFundamentalMatrix(p1_n(1:2,:)', p2_n(1:2,:)', ...
-%     'Method','RANSAC', 'NumTrials',50000,'DistanceThreshold',1e-5);
-
-% Undo the normalization
+%     'Method','RANSAC', 'NumTrials',2000,'DistanceThreshold',1e-4);
+% 
+% % Undo the normalization
 % F = (T2.') * F * T1;
 
 [F, inliers_b] = fundamentalMatrixRANSAC(p1, p2);
