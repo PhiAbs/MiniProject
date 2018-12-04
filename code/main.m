@@ -41,6 +41,7 @@ addpath('klt');
 addpath('harris');
 addpath('plot');
 addpath('essentialMatrix');
+addpath('fundamentalMatrix');
 %% Bootstrap
 % TODO: change this parameter to change baseline
 % Use more than two images to keep more keypoints
@@ -107,19 +108,19 @@ kp_m{2} = keypoints;
 p1 = [kp_m{1}'; ones(1, length(kp_m{1}))];
 pend = [kp_m{end}'; ones(1, length(kp_m{end}))];
 
-[E, inliers_b] = estimateEssentialMatrix(p1, pend, K, K);
+[E, inliers_boot] = estimateEssentialMatrix(p1, pend, K, K);
 
 [Rots,u3] = decomposeEssentialMatrix(E);
 
-[R_C2_W, T_C2_W] = disambiguateRelativePose(Rots,u3,p1(:, :),pend(:, :),K,K);
+[R_C2_W, T_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
 M1 = K * eye(3,4);
 Mend = K * [R_C2_W, T_C2_W];
-P_C2_W = linearTriangulation(p1(:, inliers_b),pend(:, inliers_b),M1,Mend);
+P_C2_W = linearTriangulation(p1(:, inliers_boot),pend(:, inliers_boot),M1,Mend);
 
 % remove points that lie behind the first camera or outside of a certain
 % range
-max_thresh = 50;
+max_thresh = 60;
 within_min = P_C2_W(3, :) > 0;
 within_max = P_C2_W(3,:) < max_thresh;
 P_C2_W = P_C2_W(:, (within_min & within_max));
@@ -130,16 +131,16 @@ figure(1);
 subplot(2,2,1);
 imshow(uint8(imgb{1}));
 hold on;
-plot(kp_m{1}(inliers_b, 1)', kp_m{1}(inliers_b, 2)', 'rx', 'Linewidth', 2);
+plot(kp_m{1}(inliers_boot, 1)', kp_m{1}(inliers_boot, 2)', 'rx', 'Linewidth', 2);
 subplot(2,2,2);
 imshow(uint8(imgb{end}));
 hold on;
-plot(kp_m{end}(inliers_b, 1)', kp_m{end}(inliers_b, 2)', 'rx', 'Linewidth', 2);
+plot(kp_m{end}(inliers_boot, 1)', kp_m{end}(inliers_boot, 2)', 'rx', 'Linewidth', 2);
 subplot(2,2,[3, 4]);
 imshow(uint8(imgb{end}));
 hold on;
-plot(kp_m{end}(inliers_b, 1)', kp_m{end}(inliers_b, 2)', 'rx', 'Linewidth', 2);
-plotMatches(1:sum(inliers_b), kp_m{1}(inliers_b, :), kp_m{end}(inliers_b, :));
+plot(kp_m{end}(inliers_boot, 1)', kp_m{end}(inliers_boot, 2)', 'rx', 'Linewidth', 2);
+plotMatches(1:sum(inliers_boot), kp_m{1}(inliers_boot, :), kp_m{end}(inliers_boot, :));
 
 % show triangulated points
 figure(2);
