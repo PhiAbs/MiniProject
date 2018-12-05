@@ -47,7 +47,7 @@ addpath('fundamentalMatrix');
 %% Bootstrap
 
 % Use more than two images to keep more keypoints
-max_iterations = 10;
+max_iterations = 12;
 imgb = cell(1, 1);
 
 % store first image
@@ -60,37 +60,37 @@ num_keypoints = 200;
 kp_m = cell(1, 1);
 kp_m{1} = extractHarrisKeypoints(imgb{1}, num_keypoints);
 
-% find matching keypoints in second image using lucas-kanade-tracker. Code
-% from solution for exercise 8
-r_T = 15;
-num_iters = 50;
-lambda = 0.1;
+disp('Start Bootstrapping');
+disp(['extracted Harris Keypoints: ', num2str(num_keypoints)]);
+    
+% for the first k images, do only KLT. The fundamental matrix is only
+% calculated afterwards (avoids wrong matrices)
+% TODO: this first loop might also be skipped (adjust the start index of
+% the next loop in this case)
 
-for i = 1:max_iterations
+k_max = 5;
+for k = 1:k_max-1
     % iteratively add more images if neccessary
-    imgb{i+1} = loadImage(ds,i+2, path);
+    imgb{k+1} = loadImage(ds,k+1, path);
+    kp_m = runKLT(kp_m, imgb, k);
+    
+    figure(21)
+    imshow(uint8(imgb{end}));
+    hold on;
+    plot(kp_m{end}(:,1)', kp_m{end}(:,2)', 'rx', 'Linewidth', 2);
+    plotMatches(1:length(kp_m{1}), kp_m{1}, kp_m{end});
+    
+    disp(['Iteration ', num2str(k)]);
+    disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
+end
+
+for i = k_max:max_iterations
+    % iteratively add more images if neccessary
+    imgb{i+1} = loadImage(ds,i+1, path);
     
     % find matching keypoints in second image using lucas-kanade-tracker. Code
     % from solution for exercise 8
-    dkp = [];
-    keep = [];
-
-    for j = 1:size(kp_m{i}, 1)
-        kp_latest = kp_m{i};
-        [dkp(:,j), keep(j)] = trackKLTRobustly(...
-            imgb{i}, imgb{i+1}, kp_latest(j,:), r_T, num_iters, lambda);
-        disp(j);
-    end
-
-    kp_latest = kp_latest + dkp';
-    kp_latest = kp_latest(logical(keep), :);
-    
-    % add the keypoints of latest image
-    kp_m{i+1} = kp_latest;
-    
-    % update the keypoints of first image
-    kp1_m = kp_m{1};
-    kp_m{1} = kp1_m(logical(keep), :);
+    kp_m = runKLT(kp_m, imgb, i);
 
     % Estimate the essential matrix E 
     p1 = [kp_m{1}'; ones(1, length(kp_m{1}))];
@@ -98,6 +98,7 @@ for i = 1:max_iterations
 
     [E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
 
+    % TODO: check if det is controlled correctly????
     [Rots,u3] = decomposeEssentialMatrix(E);
 
     [R_C2_W, T_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
@@ -118,11 +119,17 @@ for i = 1:max_iterations
     
     % Plot stuff
     plotBootstrap(imgb, kp_m, P_C2_W, R_C2_W, T_C2_W);
+    
+    disp(['Iteration ', num2str(i)]);
+    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(kp_m{1}))]);
 
     % check if camera moved far enough to finish bootstrapping
     avg_depth = mean(P_C2_W(3,:));
     baseline_dist = norm(T_C2_W);
     keyframe_selection_thresh = 0.2;
+    
+    disp(['Ratio baseline_dist / avg_depth: ', num2str((baseline_dist / avg_depth)), ...
+        ' must be > ', num2str(keyframe_selection_thresh)]);
 
     if (baseline_dist / avg_depth) > keyframe_selection_thresh
         % leave bootstrapping if keyframes are enough far apart

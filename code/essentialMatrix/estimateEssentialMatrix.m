@@ -22,6 +22,7 @@ function [E, inliers_b] = estimateEssentialMatrix(p1, p2, K1, K2)
 % % Undo the normalization
 % F = (T2.') * F * T1;
 
+% TODO instead of this function, we could also use the above code!
 [F, inliers_b] = fundamentalMatrixRANSAC(p1, p2);
 
 % Compute the essential matrix from the fundamental matrix given K
