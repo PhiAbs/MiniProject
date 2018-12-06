@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 2; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -47,7 +47,7 @@ addpath('fundamentalMatrix');
 %% Bootstrap
 
 % Use more than two images to keep more keypoints
-max_iterations = 12;
+max_iterations = 14;
 imgb = cell(1, 1);
 
 % store first image
@@ -68,7 +68,7 @@ disp(['extracted Harris Keypoints: ', num2str(num_keypoints)]);
 % TODO: this first loop might also be skipped (adjust the start index of
 % the next loop in this case)
 
-k_max = 5;
+k_max = 3;
 for k = 1:k_max-1
     % iteratively add more images if neccessary
     imgb{k+1} = loadImage(ds,k+1, path);
@@ -84,7 +84,7 @@ for k = 1:k_max-1
     disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
 end
 
-for i = k_max:max_iterations
+for i = 1:max_iterations
     % iteratively add more images if neccessary
     imgb{i+1} = loadImage(ds,i+1, path);
     
@@ -112,7 +112,7 @@ for i = k_max:max_iterations
     kp_m{end} = pend(1:2, in_essential)';
 
     % remove points that lie behind the first camera or that are far away
-    max_thresh = 100;
+    max_thresh = 120;
     within_min = P_C2_W(3, :) > 0;
     within_max = P_C2_W(3,:) < max_thresh;
     P_C2_W = P_C2_W(:, (within_min & within_max));

@@ -20,34 +20,53 @@ function [R,T] = disambiguateRelativePose(Rots,u3,points0_h,points1_h,K0,K1)
 %   to camera 1.
 %
 
-M0 = K0 * eye(3,4); % Projection matrix of camera 1
 
-total_points_in_front_best = 0;
-for iRot = 1:2
-    R_C1_C0_test = Rots(:,:,iRot);
-    
-    for iSignT = 1:2
-        T_C1_C0_test = u3 * (-1)^iSignT;
-        
-        M1 = K1 * [R_C1_C0_test, T_C1_C0_test];
-        P_C0 = linearTriangulation(points0_h,points1_h,M0,M1);
-        
-        % project in both cameras
-        P_C1 = [R_C1_C0_test T_C1_C0_test] * P_C0;
-        
-        num_points_in_front0 = sum(P_C0(3,:) > 0);
-        num_points_in_front1 = sum(P_C1(3,:) > 0);
-        total_points_in_front = num_points_in_front0 + num_points_in_front1;
-              
-        if (total_points_in_front > total_points_in_front_best)
-            % Keep the rotation that gives the highest number of points
-            % in front of both cameras
-            R = R_C1_C0_test;
-            T = T_C1_C0_test;
-            total_points_in_front_best = total_points_in_front;
-        end
+M1=K0*eye(3,4);
+
+m2(:,:,1)=[Rots(:,:,1) u3];
+m2(:,:,2)=[Rots(:,:,1) -u3];
+m2(:,:,3)=[Rots(:,:,2) u3];
+m2(:,:,4)=[Rots(:,:,2) -u3];
+
+max_positiv=0;
+
+for i=1:4
+    P=linearTriangulation(points0_h,points1_h,M1,K1*m2(:,:,i));
+    if(sum(P(3,:)>0)>max_positiv)
+        max_positiv = sum(P(3,:)>0);
+        R=m2(:,1:3,i);
+        T=m2(:,4,i);
     end
 end
+
+% M0 = K0 * eye(3,4); % Projection matrix of camera 1
+
+% total_points_in_front_best = 0;
+% for iRot = 1:2
+%     R_C1_C0_test = Rots(:,:,iRot);
+%     
+%     for iSignT = 1:2
+%         T_C1_C0_test = u3 * (-1)^iSignT;
+%         
+%         M1 = K1 * [R_C1_C0_test, T_C1_C0_test];
+%         P_C0 = linearTriangulation(points0_h,points1_h,M0,M1);
+%         
+%         % project in both cameras
+%         P_C1 = [R_C1_C0_test T_C1_C0_test] * P_C0;
+%         
+%         num_points_in_front0 = sum(P_C0(3,:) > 0);
+%         num_points_in_front1 = sum(P_C1(3,:) > 0);
+%         total_points_in_front = num_points_in_front0 + num_points_in_front1;
+%               
+%         if (total_points_in_front > total_points_in_front_best)
+%             % Keep the rotation that gives the highest number of points
+%             % in front of both cameras
+%             R = R_C1_C0_test;
+%             T = T_C1_C0_test;
+%             total_points_in_front_best = total_points_in_front;
+%         end
+%     end
+% end
 
 end
 
