@@ -1,4 +1,4 @@
-function plotBootstrap(imgb, kp_m, P_C2_W, R_C2_W, T_C2_W)
+function plotBootstrap(imgb, kp_m, Points, R_C2_W, T_C2_W)
 % Plots 2D matches and 3D points for bootstrapping process
 
     % Show keypoint matches
@@ -19,7 +19,7 @@ function plotBootstrap(imgb, kp_m, P_C2_W, R_C2_W, T_C2_W)
 
     % show triangulated points
     figure(2);
-    plot3(P_C2_W(1,:), P_C2_W(2,:), P_C2_W(3,:), 'o');
+    plot3(Points(1,:), Points(2,:), Points(3,:), 'o');
     grid on;
     axis equal;
     xlabel('x');

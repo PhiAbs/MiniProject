@@ -47,7 +47,7 @@ addpath('fundamentalMatrix');
 %% Bootstrap
 
 % Use more than two images to keep more keypoints
-max_iterations = 14;
+last_bootstrap_frame_index = 14;
 imgb = cell(1, 1);
 
 % store first image
@@ -84,7 +84,7 @@ for k = 1:k_max-1
     disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
 end
 
-for i = 1:max_iterations
+for i = 1:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     imgb{i+1} = loadImage(ds,i+1, path);
     
@@ -105,7 +105,7 @@ for i = 1:max_iterations
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, T_C2_W];
-    P_C2_W = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
+    Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
     
     % store points in our main cell array
     kp_m{1} = p1(1:2, in_essential)';
@@ -113,18 +113,18 @@ for i = 1:max_iterations
 
     % remove points that lie behind the first camera or that are far away
     max_thresh = 120;
-    within_min = P_C2_W(3, :) > 0;
-    within_max = P_C2_W(3,:) < max_thresh;
-    P_C2_W = P_C2_W(:, (within_min & within_max));
+    within_min = Points3D(3, :) > 0;
+    within_max = Points3D(3,:) < max_thresh;
+    Points3D = Points3D(:, (within_min & within_max));
     
     % Plot stuff
-    plotBootstrap(imgb, kp_m, P_C2_W, R_C2_W, T_C2_W);
+    plotBootstrap(imgb, kp_m, Points3D, R_C2_W, T_C2_W);
     
     disp(['Iteration ', num2str(i)]);
     disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(kp_m{1}))]);
 
     % check if camera moved far enough to finish bootstrapping
-    avg_depth = mean(P_C2_W(3,:));
+    avg_depth = mean(Points3D(3,:));
     baseline_dist = norm(T_C2_W);
     keyframe_selection_thresh = 0.2;
     
@@ -133,11 +133,29 @@ for i = 1:max_iterations
 
     if (baseline_dist / avg_depth) > keyframe_selection_thresh
         % leave bootstrapping if keyframes are enough far apart
+        last_bootstrap_frame_index = i;
         break;
     end
 end
+
+% Extract Harris Features from last bootstrapping image
+kp_new_last_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
+
+
+% new Harris keypoints must NOT already be tracked points in kp_m!! 
+%These points are then candidate Keypoints for the continuous mode.
+rejection_radius = 1;
+kp_new_sorted_out = checkIfKeypointIsNew(kp_new_last_frame, kp_{end}, rejection_radius);
+
+% Create Structs for continuous operation
+% Struct S contains
+% TODO also store last image from bootstrap
+S = struct;
+S.P = kp_m{end}';
+S.X = Points3D(1:3,:);
+S.C = kp_new_last_frame;
 %% Continuous operation
-range = (bootstrap_frames(end)+1):last_frame;
+range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
     fprintf('\n\nProcessing frame %d\n=====================\n', i);
     if ds == 0
@@ -154,6 +172,39 @@ for i = range
     end
     % Makes sure that plots refresh.    
     pause(0.01);
+    
+    [keep_P] = runKLTContinuous(S.P, image, prev_img);
+    
+    S.X = S.X(:, keep_P);
+    S.P = S.P(:, keep_P);
+    
+%     T = P3P(S.P, S.X);
+
+    [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
+    
+    S.C = S.C + C_delta;
+    S.C = S.C(:, keep_C);
+    S.T = S.T(:, keep_C);
+    S.F = S.F(:, keep_C);
+    
+    % Triangulate new points
+    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T);
+    
+    S.P = [S_P, S.C(:, ~keep_triang)];
+    S.C = S.C(:, keep_triang);
+    S.T = S.T(:, keep_triang);
+    S.F = S.F(:, keep_triang);
+    S.X = [S.X, X_new];
+    
+    % extract new keypoints
+    kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+    kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame, ...
+        [S.P, S.C], rejection_radius);  
+    
+    S.C = [S.C, kp_new_sorted_out];
+    S.F = [S_F, kp_new_sorted_out];
+    S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
+    
     
     prev_img = image;
 end

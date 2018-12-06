@@ -1,0 +1,18 @@
+function kp_new = checkIfKeypointIsNew(kp_new, kp_tracked, threshold)
+% checkIfKeypointIsNew checks if a newly found keypoint (Harris) already
+% existed as a keypoint which was tracked into the image from an earlier stage.
+% Discard a point if it is within a certain radius around an existing
+% keypoint
+% input: 
+% kn_new: newly found keypoints in Image, size 2xN
+% kp_tracked: keypoints tracked from earlier image, size 2xM
+% threshold: If a new point is closer to an existing keypoint than this
+% threshold, the point gets discarded
+% output: 
+% kp_new: sorted out keypoints, size 2xK
+
+for i = 1:length(kp_new)
+    distance = 
+
+end
+
