@@ -10,7 +10,7 @@ function keep = checkBaseline(P, T_W_Current, t_old, threshold)
 
 baseline = norm(t_current - t_old);
 for i=1:size(P,2)
-    P_current = T_W_current\P(:,i);
+    P_current = T_W_Current\P(:,i);
     depth(i) = P_current(3);    
 end
 

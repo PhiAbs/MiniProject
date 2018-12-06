@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 2; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -84,7 +84,7 @@ for k = 1:k_max-1
     disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
 end
 
-for i = 1:last_bootstrap_frame_index
+for i = k_max:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     imgb{i+1} = loadImage(ds,i+1, path);
     
@@ -142,12 +142,12 @@ end
 % Extract Harris Features from last bootstrapping image
 kp_new_latest_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
 
-
+%%
 % new Harris keypoints must NOT already be tracked points in kp_m!! 
 %These points are then candidate Keypoints for the continuous mode.
 rejection_radius = 1;
 kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame, ...
-    kp_{end}, rejection_radius);
+    kp_m{end}, rejection_radius);
 
 % Create Structs for continuous operation
 % Struct S contains
