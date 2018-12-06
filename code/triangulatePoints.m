@@ -11,5 +11,21 @@ function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat)
 % which baseline is large enough 1xN
 % X_new: stores newly triangulated points, 3xnnz(keep_triang)
 
+keep_triang = [];
+X_new = [];
+
+for i=1:size(C,2)
+    c = C(:,i);
+    f = F(:,i);
+    Tf = reshape(T_mat(:,i),[4 4]);
+    
+    P = linearTriangulation(c,f,T,Tf);
+    
+    if(checkBaseline(P, T, Tf(:,end), 0.2))
+        keep_triang = [keep_triang true];
+        X_new = [X_new P]; 
+    else
+        keep_triang = [keep_triang false];
+    end
 end
 
