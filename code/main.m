@@ -101,10 +101,10 @@ for i = 1:last_bootstrap_frame_index
     % TODO: check if det is controlled correctly????
     [Rots,u3] = decomposeEssentialMatrix(E);
 
-    [R_C2_W, T_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
+    [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
     M1 = K * eye(3,4);
-    Mend = K * [R_C2_W, T_C2_W];
+    Mend = K * [R_C2_W, t_C2_W];
     Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
     
     % store points in our main cell array
@@ -118,17 +118,18 @@ for i = 1:last_bootstrap_frame_index
     Points3D = Points3D(:, (within_min & within_max));
     
     % Plot stuff
-    plotBootstrap(imgb, kp_m, Points3D, R_C2_W, T_C2_W);
+    plotBootstrap(imgb, kp_m, Points3D, R_C2_W, t_C2_W);
     
     disp(['Iteration ', num2str(i)]);
     disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(kp_m{1}))]);
 
     % check if camera moved far enough to finish bootstrapping
     avg_depth = mean(Points3D(3,:));
-    baseline_dist = norm(T_C2_W);
+    baseline_dist = norm(t_C2_W);
     keyframe_selection_thresh = 0.2;
     
-    disp(['Ratio baseline_dist / avg_depth: ', num2str((baseline_dist / avg_depth)), ...
+    disp(['Ratio baseline_dist / avg_depth: ', ...
+        num2str((baseline_dist / avg_depth)), ...
         ' must be > ', num2str(keyframe_selection_thresh)]);
 
     if (baseline_dist / avg_depth) > keyframe_selection_thresh
@@ -139,21 +140,26 @@ for i = 1:last_bootstrap_frame_index
 end
 
 % Extract Harris Features from last bootstrapping image
-kp_new_last_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
+kp_new_latest_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
 
 
 % new Harris keypoints must NOT already be tracked points in kp_m!! 
 %These points are then candidate Keypoints for the continuous mode.
 rejection_radius = 1;
-kp_new_sorted_out = checkIfKeypointIsNew(kp_new_last_frame, kp_{end}, rejection_radius);
+kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame, ...
+    kp_{end}, rejection_radius);
 
 % Create Structs for continuous operation
 % Struct S contains
-% TODO also store last image from bootstrap
+prev_img = imgb{end};
 S = struct;
 S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
-S.C = kp_new_last_frame;
+S.C = kp_new_sorted_out;
+S.F = S.C;
+S.T = inv([R_C2_W', -t_C2_W; 0,0,0,1]);
+
+
 %% Continuous operation
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -173,10 +179,13 @@ for i = range
     % Makes sure that plots refresh.    
     pause(0.01);
     
-    [keep_P] = runKLTContinuous(S.P, image, prev_img);
+    [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
+        [dkp(:,j), keep(j)] = trackKLTRobustly(...
+        imgb{i}, imgb{i+1}, kp_latest(j,:), r_T, num_iters, lambda);
     
-    S.X = S.X(:, keep_P);
+    S.P = S.P + P_delta;
     S.P = S.P(:, keep_P);
+    S.X = S.X(:, keep_P);
     
 %     T = P3P(S.P, S.X);
 
@@ -204,7 +213,6 @@ for i = range
     S.C = [S.C, kp_new_sorted_out];
     S.F = [S_F, kp_new_sorted_out];
     S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
-    
     
     prev_img = image;
 end

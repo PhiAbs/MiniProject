@@ -11,8 +11,8 @@ function kp_new = checkIfKeypointIsNew(kp_new, kp_tracked, threshold)
 % output: 
 % kp_new: sorted out keypoints, size 2xK
 
-for i = 1:length(kp_new)
-    distance = 
-
+for i = 1:length(kp_tracked)
+    distance = sqrt(sum((kp_new - kp_tracked(:,i)).^2));
+    kp_new = kp_new(distance < threshold);
 end
 
