@@ -13,6 +13,7 @@ if ds == 0
         0 7.188560000000e+02 1.852157000000e+02
         0 0 1];
 elseif ds == 1 
+    path = '../datasets/malaga-urban-dataset-extract-07';
     % Path containing the many files of Malaga 7.
     assert(exist('path', 'var') ~= 0);
     images = dir([path ...
@@ -47,12 +48,15 @@ addpath('fundamentalMatrix');
 %% Bootstrap
 
 % Use more than two images to keep more keypoints
-last_bootstrap_frame_index = 14;
+last_bootstrap_frame_index = 20;
 imgb = cell(1, 1);
 
 % store first image
-imgb{1} = loadImage(ds, 1, path);
-
+if ds == 1
+    imgb{1} = loadImage(ds, 1, path, left_images);
+else
+    imgb{1} = loadImage(ds, 1, path);
+end
 % number of keypoints we want to extract from first imaeg
 num_keypoints = 200;
 
@@ -68,10 +72,15 @@ disp(['extracted Harris Keypoints: ', num2str(num_keypoints)]);
 % TODO: this first loop might also be skipped (adjust the start index of
 % the next loop in this case)
 
-k_max = 3;
+k_max = 8;
 for k = 1:k_max-1
     % iteratively add more images if neccessary
-    imgb{k+1} = loadImage(ds,k+1, path);
+    if ds == 1
+        imgb{k+1} = loadImage(ds, k+1, path, left_images);
+    else
+        imgb{k+1} = loadImage(ds, k+1, path);
+    end
+    
     kp_m = runKLT(kp_m, imgb, k);
     
     figure(21)
@@ -86,7 +95,11 @@ end
 
 for i = k_max:last_bootstrap_frame_index
     % iteratively add more images if neccessary
-    imgb{i+1} = loadImage(ds,i+1, path);
+    if ds == 1
+        imgb{i+1} = loadImage(ds, i+1, path, left_images);
+    else
+        imgb{i+1} = loadImage(ds, i+1, path);
+    end
     
     % find matching keypoints in second image using lucas-kanade-tracker. Code
     % from solution for exercise 8
@@ -145,9 +158,9 @@ kp_new_latest_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
 %%
 % new Harris keypoints must NOT already be tracked points in kp_m!! 
 %These points are then candidate Keypoints for the continuous mode.
-rejection_radius = 1;
-kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame, ...
-    kp_m{end}, rejection_radius);
+rejection_radius = 5;
+kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
+    kp_m{end}', rejection_radius);
 
 % Create Structs for continuous operation
 % Struct S contains
@@ -157,7 +170,7 @@ S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
-S.T = inv([R_C2_W', -t_C2_W; 0,0,0,1]);
+S.T = inv([R_C2_W, t_C2_W; 0,0,0,1]);
 
 
 %% Continuous operation
