@@ -174,9 +174,9 @@ S.F = S.C;
 S.T = inv([R_C2_W, t_C2_W; 0,0,0,1]);
 S.T = S.T(:)* ones(1, size(S.C, 2));
 
-% figure(1)
-% plot(T(1,end), T(2,end),'o');
-% hold on;
+figure(1)
+plot(S.T(13), S.T(15),'x');
+hold on;
 %% Continuous operation
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -238,6 +238,6 @@ for i = range
     disp(['Number of 3D points:' num2str(size(S.X,2))]);
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
     figure(1)
-    plot(T(1,end), T(2,end),'o');
+    plot(T(1,end), T(3,end),'x');
     hold on;
 end
