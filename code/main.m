@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 2; % 0: KITTI, 1: Malaga, 2: parking
+ds = 1; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -72,8 +72,8 @@ disp(['extracted Harris Keypoints: ', num2str(num_keypoints)]);
 % TODO: this first loop might also be skipped (adjust the start index of
 % the next loop in this case)
 
-k_max = 8;
-for k = 1:k_max-1
+k_max = 4;
+for k = 1:k_max
     % iteratively add more images if neccessary
     if ds == 1
         imgb{k+1} = loadImage(ds, k+1, path, left_images);
@@ -93,7 +93,7 @@ for k = 1:k_max-1
     disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
 end
 
-for i = k_max:last_bootstrap_frame_index
+for i = k_max+1:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     if ds == 1
         imgb{i+1} = loadImage(ds, i+1, path, left_images);
