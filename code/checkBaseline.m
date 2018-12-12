@@ -1,16 +1,16 @@
-function keep = checkBaseline(P, T_W_Current, t_old, threshold)
+function keep = checkBaseline(X, T, t_old, threshold)
 %checkBaseline returns if 3D point is kept or not
 % input: 
-% points3D: 3D points, 3xN
-% T_current: translation from base frame to current camera frame, 3x1
-% T_old: translation from base frame to older camera frame, 3x1
+% X: 3D points, 3xN
+% T: translation from camera to world frame, 4x4
+% T_old: translation from base frame to older camera frame, 4x1
 % threshold: If value below threshold, 3D point is not kept
 % output: 
 % keep: boolean, tells if 3D point is kept or not
 
-baseline = norm(t_current - t_old);
-for i=1:size(P,2)
-    P_current = T_W_Current\P(:,i);
+baseline = norm(T(:,4) - t_old);
+for i=1:size(X,2)
+    P_current = T\[X(:,i); 1];
     depth(i) = P_current(3);    
 end
 

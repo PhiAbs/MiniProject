@@ -25,7 +25,6 @@ for i=1:size(C,2)
     
     % TODO: only keep points that are triangulated with a min. accuracy!
     X = linearTriangulation(c,f,Tc,Tff);
-    X = X(1:3);
     
     if(checkBaseline(X, T, Tf(:,end), 0.2))
         keep_triang = [keep_triang true];
@@ -34,10 +33,4 @@ for i=1:size(C,2)
         keep_triang = [keep_triang false];
     end
 end
-
-keep_triang = logical(keep_triang);
-
-end
-
-
 
