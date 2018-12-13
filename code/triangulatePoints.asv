@@ -1,4 +1,4 @@
-function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat, K)
+function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat, Frames,K)
 %triangulatePoints triangulates every point. 
 % input:
 % C: all keypoints in current frame in pixel coordinates, 2xM
@@ -12,37 +12,36 @@ function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat, K)
 % which baseline is large enough 1xN
 % X_new: stores newly triangulated points, 3xnnz(keep_triang)
 
-keep_triang = [];
+keep_triang = false(1,size(C,2));
 X_new = [];
 
 % invert matrix to get T_C_W
 T_C_W = inv(T);
 Mc = K * T_C_W(1:3,:);
 
-
-for i=1:size(C,2)
-    c = [C(:,i); 1];
-    f = [F(:,i); 1];
+% for i=1:size(C,2)
+for frame=unique(Frames)
+    
+    sameFrame = Frames == frame;
+    c = [C(:,sameFrame); ones(1,nnz(sameFrame))];
+    f = [F(:,sameFrame); ones(1,nnz(sameFrame))];
     
     % invert matrix to get Tf_C_W
-    Tf = (reshape(T_mat(:,i),[4 4]));
-    Mf = Tf \ K;
-
-    Tff = Mf(1:3,:);
+    Tf = (reshape(T_mat(:,find(sameFrame == 1,1)),[4 4]));
+    Tf_C_W = inv(Tf);
+    Mf = K * Tf_C_W(1:3,:);
     
     % TODO: only keep points that are triangulated with a min. accuracy!
-    X = linearTriangulation(c,f,Mc,Tff);
-    X = X(1:3);
+    X = linearTriangulation(f,c,Mf,Mc);
+    X = X(1:3,:);
     
-    if(checkBaseline(X, T, Tf(:,end), 0.2))
-        keep_triang = [keep_triang true];
-        X_new = [X_new X]; 
-    else
-        keep_triang = [keep_triang false];
+    if(checkBaseline(X, T, Tf(:,end), 0.15))
+        keep_triang = keep_triang | sameFrame;
+        X_new = [X_new X];
     end
 end
 
-keep_triang = logical(keep_triang);
+% keep_triang = logical(keep_triang);
 
 end
 
