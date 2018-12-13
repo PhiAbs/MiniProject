@@ -228,7 +228,7 @@ for i = range
     % Triangulate new points
     disp('try to triangulate S.C and S.F');
     tic
-    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, K);
+    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, S.Frames, K);
     toc
     
     S.P = [S.P, S.C(:, keep_triang)];
