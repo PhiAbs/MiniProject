@@ -50,69 +50,89 @@ addpath('p3p');
 
 % Use more than two images to keep more keypoints
 last_bootstrap_frame_index = 20;
-imgb = cell(1, 1);
 
 % store first image
 if ds == 1
-    imgb{1} = loadImage(ds, 1, path, left_images);
+    image = uint8(loadImage(ds, 1, path, left_images));
 else
-    imgb{1} = loadImage(ds, 1, path);
+    image = uint8(loadImage(ds, 1, path));
 end
-% number of keypoints we want to extract from first imaeg
-num_keypoints = 200;
 
+% number of keypoints we want to extract from first imaeg
+% num_keypoints = 200;
 % keypoints get stored as cell array with arrays Nx2, [col, row]
-kp_m = cell(1, 1);
-kp_m{1} = extractHarrisKeypoints(imgb{1}, num_keypoints);
+% keypoints_start = extractHarrisKeypoints(imgb{1}, num_keypoints);
+points = detectHarrisFeatures(image);
+keypoints_start = points.Location;
 
 disp('Start Bootstrapping');
-disp(['extracted Harris Keypoints: ', num2str(num_keypoints)]);
-    
+disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
+% disp(['extracted Harris Keypoints: ', num2str(length(points))]);
+
+
 % for the first k images, do only KLT. The fundamental matrix is only
 % calculated afterwards (avoids wrong matrices)
 % TODO: this first loop might also be skipped (adjust the start index of
 % the next loop in this case)
 
-k_max = 8;
+% add pointtracker object for KLT
+pointTracker = vision.PointTracker('MaxBidirectionalError',0.5);
+initialize(pointTracker, keypoints_start, image);
+
+k_max = 5;
+
+image_prev = image;
+
 for k = 1:k_max-1
     % iteratively add more images if neccessary
     if ds == 1
-        imgb{k+1} = loadImage(ds, k+1, path, left_images);
+        image = uint8(loadImage(ds, k+1, path, left_images));
     else
-        imgb{k+1} = loadImage(ds, k+1, path);
+        image = uint8(loadImage(ds, k+1, path));
     end
     
-    kp_m = runKLT(kp_m, imgb, k);
+    % do KLT tracking for keypoints
+    [points, point_validity] = pointTracker(image);
+    
+    keypoints_latest = points(point_validity, :);
+    keypoints_start = keypoints_start(point_validity, :);
+    
+    % only keep valid points in point tracker
+    setPoints(pointTracker, keypoints_latest);
     
     figure(21)
-    imshow(uint8(imgb{end}));
+    imshow((image));
     hold on;
-    plot(kp_m{end}(:,1)', kp_m{end}(:,2)', 'rx', 'Linewidth', 2);
-    plotMatches(1:length(kp_m{1}), kp_m{1}, kp_m{end});
+    plot(keypoints_latest(:,1)', keypoints_latest(:,2)', 'rx', 'Linewidth', 2);
+    plotMatches(1:length(keypoints_start), keypoints_start, keypoints_latest);
     
     disp(['Iteration ', num2str(k)]);
-    disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(kp_m{1}))]);
+    disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(keypoints_start))]);
+    
+    image_prev = image;
 end
+
 
 for i = k_max:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     if ds == 1
-        imgb{i+1} = loadImage(ds, i+1, path, left_images);
+        image = uint8(loadImage(ds, k+1, path, left_images));
     else
-        imgb{i+1} = loadImage(ds, i+1, path);
+        image = uint8(loadImage(ds, k+1, path));
     end
     
-    % find matching keypoints in second image using lucas-kanade-tracker. Code
-    % from solution for exercise 8
-    kp_m = runKLT(kp_m, imgb, i);
+    % find matching keypoints in newest image using KLT
+    [points, point_validity] = pointTracker(image);
+    
+    keypoints_latest = points(point_validity, :);
+    keypoints_start = keypoints_start(point_validity, :);
 
     % Estimate the essential matrix E 
-    p1 = [kp_m{1}'; ones(1, length(kp_m{1}))];
-    pend = [kp_m{end}'; ones(1, length(kp_m{end}))];
+    p1 = [keypoints_start'; ones(1, length(keypoints_start))];
+    pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
 
     [E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
 
-    % TODO: check if det is controlled correctly????
     [Rots,u3] = decomposeEssentialMatrix(E);
 
     [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
@@ -122,25 +142,28 @@ for i = k_max:last_bootstrap_frame_index
     Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
     
     % store points in our main cell array
-    kp_m{1} = p1(1:2, in_essential)';
-    kp_m{end} = pend(1:2, in_essential)';
+    keypoints_start = p1(1:2, in_essential)';
+    keypoints_latest = pend(1:2, in_essential)';
+    
+    % only keep valid points in point tracker
+    setPoints(pointTracker, keypoints_latest);
 
     % remove points that lie behind the first camera or that are far away
-    max_thresh = 120;
-    within_min = Points3D(3, :) > 0;
-    within_max = Points3D(3,:) < max_thresh;
-    Points3D = Points3D(:, (within_min & within_max));
+%     max_thresh = 120;
+%     within_min = Points3D(3, :) > 0;
+%     within_max = Points3D(3,:) < max_thresh;
+%     Points3D = Points3D(:, (within_min & within_max));
     
     % Plot stuff
-    plotBootstrap(imgb, kp_m, Points3D, R_C2_W, t_C2_W);
+    plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
     
     disp(['Iteration ', num2str(i)]);
-    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(kp_m{1}))]);
+    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
 
     % check if camera moved far enough to finish bootstrapping
     avg_depth = mean(Points3D(3,:));
     baseline_dist = norm(t_C2_W);
-    keyframe_selection_thresh = 0.2;
+    keyframe_selection_thresh = 0.1;
     
     disp(['Ratio baseline_dist / avg_depth: ', ...
         num2str((baseline_dist / avg_depth)), ...
@@ -151,29 +174,39 @@ for i = k_max:last_bootstrap_frame_index
         last_bootstrap_frame_index = i;
         break;
     end
+    
+    image_prev = image;
 end
 
 % Extract Harris Features from last bootstrapping image
-kp_new_latest_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
+% kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+points = detectHarrisFeatures(image);
+kp_new_latest_frame = points.Location;
 
 %%
-% new Harris keypoints must NOT already be tracked points in kp_m!! 
+% new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
 rejection_radius = 10;
 kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
-    kp_m{end}', rejection_radius);
+    keypoints_latest', rejection_radius);
 
 % Create Structs for continuous operation
 % Struct S contains
-prev_img = imgb{end};
+prev_img = image;
 S = struct;
-S.P = kp_m{end}';
+S.P = keypoints_latest';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
 T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
 S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
+
+% initialize KLT trackers for continuous mode
+tracker_P = vision.PointTracker('MaxBidirectionalError',1);
+initialize(tracker_P, S.P', image);
+tracker_C = vision.PointTracker('MaxBidirectionalError',1);
+initialize(tracker_C, S.C', image);
 
 figure(21);
 plot3(0,0,0,'x');
@@ -200,11 +233,12 @@ for i = range
     
     disp('run KLT on S.P');
     tic
-    [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
+%     [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
+    % do KLT tracking for keypoints
+    [points_KLT_P, keep_P] = tracker_P(image);
     toc
-       
-    S.P = S.P + P_delta;
-    S.P = S.P(:, keep_P);
+    
+    S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
     
 %     Estimate new camera pose using p3p
@@ -216,13 +250,13 @@ for i = range
 %     Track 
     disp('run KLT on S.C');
     tic
-    [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
+%     [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
+    [points_KLT_C, keep_C] = tracker_C(image);
     toc;
     
     Frames_old = S.Frames;
     
-    S.C = S.C + C_delta;
-    S.C = S.C(:, keep_C);
+    S.C = points_KLT_C(keep_C,:)';
     S.T = S.T(:, keep_C);
     S.F = S.F(:, keep_C);
     S.Frames = S.Frames(keep_C);  
@@ -243,8 +277,10 @@ for i = range
     % extract new keypoints
     disp('extract Keypoint')
     tic
-    num_keypoints = 100;
-    kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+%     num_keypoints = 100;
+%     kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+    points = detectHarrisFeatures(image);
+    kp_new_latest_frame = points.Location;
     toc
     disp('check if extracted Keypoints are new')
     tic
@@ -256,6 +292,8 @@ for i = range
     S.F = [S.F, kp_new_sorted_out];
     S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
     S.Frames = [S.Frames, i*ones(1, size(kp_new_sorted_out, 2))]; 
+    setPoints(tracker_P, S.P');
+    setPoints(tracker_C, S.C');
     
     prev_img = image;
 
