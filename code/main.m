@@ -237,6 +237,7 @@ for i = range
 
     disp(['Number of 3D points:' num2str(size(S.X,2))]);
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
+    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))];
     figure(1)
     plot(T(1,end), T(3,end),'x');
     hold on;
