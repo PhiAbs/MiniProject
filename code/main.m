@@ -171,8 +171,9 @@ S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
-T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
-S.T = T(:)* ones(1, size(S.C, 2));
+S.T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
+S.T = S.T(:)* ones(1, size(S.C, 2));
+S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
 plotContinuous(prev_img, S.X, S.P, S.C, T);
 
@@ -195,40 +196,63 @@ for i = range
     % Makes sure that plots refresh.    
     pause(0.01);
     
+    disp('run KLT on S.P');
+    tic
     [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
-    
+    toc
+       
     S.P = S.P + P_delta;
     S.P = S.P(:, keep_P);
     S.X = S.X(:, keep_P);
     
 %     Estimate new camera pose using p3p
+    disp('run p3p with Ransac on S.P and S.X');
+    tic
     [T, S.P, S.X] = ransacLocalization(S.P, S.X, K);
+    toc
     
 %     Track 
+    disp('run KLT on S.C');
+    tic
     [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
+    toc;
+    
+    Frames_old = S.Frames;
     
     S.C = S.C + C_delta;
     S.C = S.C(:, keep_C);
     S.T = S.T(:, keep_C);
     S.F = S.F(:, keep_C);
+    S.Frames = S.Frames(keep_C);  
     
     % Triangulate new points
+    disp('try to triangulate S.C and S.F');
+    tic
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, K);
+    toc
     
     S.P = [S.P, S.C(:, keep_triang)];
     S.C = S.C(:, ~keep_triang);
     S.T = S.T(:, ~keep_triang);
     S.F = S.F(:, ~keep_triang);
     S.X = [S.X, X_new];
+    S.Frames = S.Frames(~keep_triang);
     
     % extract new keypoints
+    disp('extract Keypoint')
+    tic
     kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+    toc
+    disp('check if extracted Keypoints are new')
+    tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
         [S.P, S.C], rejection_radius);  
+    toc
     
     S.C = [S.C, kp_new_sorted_out];
     S.F = [S.F, kp_new_sorted_out];
     S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
+    S.Frames = [S.Frames, i*ones(1, size(kp_new_sorted_out, 2))]; 
     
     prev_img = image;
 
@@ -238,4 +262,7 @@ for i = range
     
     plotContinuous(image, S.X, S.P, S.C, T);
     
+%     disp(['Frames still in S.C' num2str(unique(S.Frames))];
+
+    plotBarDiagram(S.Frames,Frames_old);
 end
