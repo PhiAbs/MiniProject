@@ -171,8 +171,8 @@ S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
-S.T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
-S.T = S.T(:)* ones(1, size(S.C, 2));
+T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
+S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
 plotContinuous(prev_img, S.X, S.P, S.C, T);
