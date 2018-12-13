@@ -171,12 +171,14 @@ S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
-S.T = inv([R_C2_W, t_C2_W; 0,0,0,1]);
+S.T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
 S.T = S.T(:)* ones(1, size(S.C, 2));
 
-figure(1)
-plot(S.T(13), S.T(15),'x');
-hold on;
+% figure(1)
+% plot(S.T(13), S.T(15),'x');
+% hold on;
+
+% check if p3p gives the same as bootstrap
 %% Continuous operation
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -197,8 +199,6 @@ for i = range
     pause(0.01);
     
     [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
-%         [dkp(:,j), keep(j)] = trackKLTRobustly(...
-%         imgb{i}, imgb{i+1}, kp_latest(j,:), r_T, num_iters, lambda);
     
     S.P = S.P + P_delta;
     S.P = S.P(:, keep_P);
