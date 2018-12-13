@@ -159,7 +159,7 @@ kp_new_latest_frame = extractHarrisKeypoints(imgb{end}, num_keypoints);
 %%
 % new Harris keypoints must NOT already be tracked points in kp_m!! 
 %These points are then candidate Keypoints for the continuous mode.
-rejection_radius = 5;
+rejection_radius = 10;
 kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
     kp_m{end}', rejection_radius);
 
@@ -171,14 +171,11 @@ S.P = kp_m{end}';
 S.X = Points3D(1:3,:);
 S.C = kp_new_sorted_out;
 S.F = S.C;
-S.T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
-S.T = S.T(:)* ones(1, size(S.C, 2));
+T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
+S.T = T(:)* ones(1, size(S.C, 2));
 
-% figure(1)
-% plot(S.T(13), S.T(15),'x');
-% hold on;
+plotContinuous(prev_img, S.X, S.P, S.C, T);
 
-% check if p3p gives the same as bootstrap
 %% Continuous operation
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -216,7 +213,7 @@ for i = range
     S.F = S.F(:, keep_C);
     
     % Triangulate new points
-    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T);
+    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, K);
     
     S.P = [S.P, S.C(:, keep_triang)];
     S.C = S.C(:, ~keep_triang);
@@ -237,8 +234,8 @@ for i = range
 
     disp(['Number of 3D points:' num2str(size(S.X,2))]);
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
-    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))];
-    figure(1)
-    plot(T(1,end), T(3,end),'x');
-    hold on;
+    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+    
+    plotContinuous(image, S.X, S.P, S.C, T);
+    
 end
