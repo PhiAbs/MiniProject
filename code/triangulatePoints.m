@@ -18,6 +18,8 @@ X_new = [];
 % invert matrix to get T_C_W
 T_C_W = inv(T);
 Mc = K * T_C_W(1:3,:);
+% Mc = K * T(1:3,:);
+
 
 for i=1:size(C,2)
     c = [C(:,i); 1];
@@ -27,6 +29,7 @@ for i=1:size(C,2)
     Tf = (reshape(T_mat(:,i),[4 4]));
     Tf_C_W = inv(Tf);
     Mf = K * Tf_C_W(1:3,:);
+%     Mf = K * Tf(1:3,:);
     
     % TODO: only keep points that are triangulated with a min. accuracy!
     X = linearTriangulation(f,c,Mf,Mc);

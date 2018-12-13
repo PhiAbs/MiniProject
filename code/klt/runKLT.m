@@ -10,8 +10,8 @@ function [kp_m, keep] = runKLT(kp_m, imgb, i)
 % discarded
 
 % Parameters for KLT tracker
-r_T = 15;
-num_iters = 50;
+r_T = 15; % 15
+num_iters = 30; % 50
 lambda = 0.1;
 
 % find matching keypoints in second image using lucas-kanade-tracker. Code

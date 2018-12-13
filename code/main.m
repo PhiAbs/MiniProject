@@ -175,6 +175,8 @@ T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
 S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
+figure(21);
+plot3(0,0,0,'x');
 plotContinuous(prev_img, S.X, S.P, S.C, T);
 
 %% Continuous operation
@@ -241,6 +243,7 @@ for i = range
     % extract new keypoints
     disp('extract Keypoint')
     tic
+    num_keypoints = 100;
     kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
     toc
     disp('check if extracted Keypoints are new')
@@ -260,7 +263,7 @@ for i = range
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
     disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
     
-    plotContinuous(image, S.X, S.P, S.C, T);
+    plotContinuous(image, X_new, S.P, S.C, T);
     
 %     disp(['Frames still in S.C' num2str(unique(S.Frames))];
 

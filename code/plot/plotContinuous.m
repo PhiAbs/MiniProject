@@ -25,7 +25,10 @@ function plotContinuous(img_latest, X, P, C, T_newest)
 
     % show triangulated points in 3D plot
     figure(21);
-    plot3(X(1,:), X(2,:), X(3,:), 'rx');
+    hold on;
+    if isempty(X) == 0
+        plot3(X(1,:), X(2,:), X(3,:), 'x');
+    end
     hold on;
     grid on;
     axis equal;
