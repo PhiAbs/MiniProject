@@ -34,5 +34,16 @@ function plotBootstrap(image_prev, image, kp_start, kp_latest, Points, R_C2_W, T
     plotCoordinateFrame(R_C2_W',center_cam2_W, 0.8);
     text(center_cam2_W(1)-0.1, center_cam2_W(2)-0.1, center_cam2_W(3)-0.1,'Cam 2','fontsize',10,'color','k','FontWeight','bold');
 
+    % show only cameras
+    figure(3)
+    clf;
+    plotCoordinateFrame(eye(3),zeros(3,1), 0.8);
+    hold on;
+    text(-0.1,-0.1,-0.1,'Cam 1','fontsize',10,'color','k','FontWeight','bold');
+
+    center_cam2_W = double(-R_C2_W'*T_C2_W);
+    plotCoordinateFrame(R_C2_W',center_cam2_W, 0.8);
+    text(center_cam2_W(1)-0.1, center_cam2_W(2)-0.1, center_cam2_W(3)-0.1,'Cam 2','fontsize',10,'color','k','FontWeight','bold');
+
 end
 

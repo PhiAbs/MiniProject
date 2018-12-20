@@ -1,4 +1,4 @@
-function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat, Frames,K)
+function [keep_triang, X_new] = triangulatePoints(C, F, T, T_mat, Frames,K, baseline_thresh)
 %triangulatePoints triangulates every point. 
 % input:
 % C: all keypoints in current frame in pixel coordinates, 2xM
@@ -38,7 +38,7 @@ for frame=unique(Frames)
     X = linearTriangulation(f,c,Mf,Mc);
     X = X(1:3,:);
     
-    if(checkBaseline(X, T, Tf(:,end), 0.15))
+    if(checkBaseline(X, T, Tf(:,end), baseline_thresh))
         keep_triang = keep_triang | sameFrame;
         X_new = [X_new X];
     end
