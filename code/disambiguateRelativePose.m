@@ -56,7 +56,9 @@ for iRot = 1:2
         
         num_points_in_front0 = sum(P_C0(3,:) > 0);
         num_points_in_front1 = sum(P_C1(3,:) > 0);
-        total_points_in_front = num_points_in_front0 + num_points_in_front1;
+        
+        [R_C1_C0_test T_C1_C0_test]
+        total_points_in_front = num_points_in_front0 + num_points_in_front1
               
         if (total_points_in_front > total_points_in_front_best)
             % Keep the rotation that gives the highest number of points

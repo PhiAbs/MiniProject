@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 2; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -49,7 +49,7 @@ addpath('p3p');
 %% Bootstrap
 
 % Use more than two images to keep more keypoints
-last_bootstrap_frame_index = 20;
+last_bootstrap_frame_index = 10;
 
 % store first image
 if ds == 1
@@ -69,56 +69,18 @@ disp('Start Bootstrapping');
 disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
 % disp(['extracted Harris Keypoints: ', num2str(length(points))]);
 
-
-% for the first k images, do only KLT. The fundamental matrix is only
-% calculated afterwards (avoids wrong matrices)
-% TODO: this first loop might also be skipped (adjust the start index of
-% the next loop in this case)
-
 % add pointtracker object for KLT
-pointTracker = vision.PointTracker('MaxBidirectionalError',0.5);
+pointTracker = vision.PointTracker('MaxBidirectionalError',0.2);
 initialize(pointTracker, keypoints_start, image);
-
-k_max = 5;
 
 image_prev = image;
 
-for k = 1:k_max-1
+for i = 1:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     if ds == 1
-        image = uint8(loadImage(ds, k+1, path, left_images));
+        image = uint8(loadImage(ds, i+1, path, left_images));
     else
-        image = uint8(loadImage(ds, k+1, path));
-    end
-    
-    % do KLT tracking for keypoints
-    [points, point_validity] = pointTracker(image);
-    
-    keypoints_latest = points(point_validity, :);
-    keypoints_start = keypoints_start(point_validity, :);
-    
-    % only keep valid points in point tracker
-    setPoints(pointTracker, keypoints_latest);
-    
-    figure(21)
-    imshow((image));
-    hold on;
-    plot(keypoints_latest(:,1)', keypoints_latest(:,2)', 'rx', 'Linewidth', 2);
-    plotMatches(1:length(keypoints_start), keypoints_start, keypoints_latest);
-    
-    disp(['Iteration ', num2str(k)]);
-    disp(['Keypoints in Image nr ', num2str(k+1), ': ', num2str(length(keypoints_start))]);
-    
-    image_prev = image;
-end
-
-
-for i = k_max:last_bootstrap_frame_index
-    % iteratively add more images if neccessary
-    if ds == 1
-        image = uint8(loadImage(ds, k+1, path, left_images));
-    else
-        image = uint8(loadImage(ds, k+1, path));
+        image = uint8(loadImage(ds, i+1, path));
     end
     
     % find matching keypoints in newest image using KLT
@@ -134,25 +96,25 @@ for i = k_max:last_bootstrap_frame_index
     [E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
 
     [Rots,u3] = decomposeEssentialMatrix(E);
+    
+%     p1 = p1(:, in_essential);
+%     pend = pend(:, in_essential);
 
     [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, t_C2_W];
-    Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
+    Points3D = linearTriangulation(p1, pend, M1, Mend);
+%     Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
     
     % store points in our main cell array
-    keypoints_start = p1(1:2, in_essential)';
-    keypoints_latest = pend(1:2, in_essential)';
+    keypoints_start = p1(1:2, :)';
+    keypoints_latest = pend(1:2, :)';
+%     keypoints_start = p1(1:2, in_essential)';
+%     keypoints_latest = pend(1:2, in_essential)';
     
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
-
-    % remove points that lie behind the first camera or that are far away
-%     max_thresh = 120;
-%     within_min = Points3D(3, :) > 0;
-%     within_max = Points3D(3,:) < max_thresh;
-%     Points3D = Points3D(:, (within_min & within_max));
     
     % Plot stuff
     plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
@@ -178,15 +140,27 @@ for i = k_max:last_bootstrap_frame_index
     image_prev = image;
 end
 
+% When keyframe for bootstrapping has been found, we redo the calculation
+% for the essential matrix only with inliers!
+
+
 % Extract Harris Features from last bootstrapping image
 % kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
 points = detectHarrisFeatures(image);
 kp_new_latest_frame = points.Location;
 
 %%
+
+% remove points that lie behind the first camera or that are far away
+    max_thresh = 120;
+    within_min = Points3D(3, :) > 0;
+    within_max = Points3D(3,:) < max_thresh;
+    Points3D = Points3D(:, (within_min & within_max));
+    keypoints_latest = keypoints_latest((within_min & within_max), :);
+
 % new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
-rejection_radius = 10;
+rejection_radius = 2;
 kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
     keypoints_latest', rejection_radius);
 
@@ -203,9 +177,9 @@ S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
 % initialize KLT trackers for continuous mode
-tracker_P = vision.PointTracker('MaxBidirectionalError',1);
+tracker_P = vision.PointTracker('MaxBidirectionalError',0.1);
 initialize(tracker_P, S.P', image);
-tracker_C = vision.PointTracker('MaxBidirectionalError',1);
+tracker_C = vision.PointTracker('MaxBidirectionalError',0.1);
 initialize(tracker_C, S.C', image);
 
 figure(21);
@@ -213,6 +187,12 @@ plot3(0,0,0,'x');
 plotContinuous(prev_img, S.X, S.P, S.C, T);
 
 %% Continuous operation
+% TODO: 
+% why does the garage set give bad camera poses??? WTF
+% reproject triangulated points and only keep those that have a small error
+% throw out negative points and points far away in continuous mode
+% bundle adjustment
+
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
     fprintf('\n\nProcessing frame %d\n=====================\n', i);
@@ -244,7 +224,9 @@ for i = range
 %     Estimate new camera pose using p3p
     disp('run p3p with Ransac on S.P and S.X');
     tic
-    [T, S.P, S.X] = ransacLocalization(S.P, S.X, K);
+    pixel_thresh = 5;
+    num_iter = 5000;
+    [T, S.P, S.X] = ransacLocalization(S.P, S.X, K, pixel_thresh, num_iter);
     toc
     
 %     Track 
@@ -264,7 +246,9 @@ for i = range
     % Triangulate new points
     disp('try to triangulate S.C and S.F');
     tic
-    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, S.Frames, K);
+    baseline_thresh = 0.1;
+    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
+        S.Frames, K, baseline_thresh);
     toc
     
     S.P = [S.P, S.C(:, keep_triang)];
