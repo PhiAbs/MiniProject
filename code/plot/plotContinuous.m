@@ -20,6 +20,7 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     figure(20);
     subplot(2,2,4);
     hold on;
+    axis equal;
     plot(T_newest(1,end), T_newest(3,end), 'Marker', 'o');
     title('camera centers (seen top-down)')
 

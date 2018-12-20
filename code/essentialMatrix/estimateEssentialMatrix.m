@@ -30,12 +30,4 @@ function [E, inliers_b] = estimateEssentialMatrix(p1, p2, K1, K2)
 % Compute the essential matrix from the fundamental matrix given K
 E = K2' * F * K1;
 
-% enforce constraints: last eigen value equals to zero, the first two must
-% be equal
-% [U,S,V] = svd(E);
-% diag([1,1,0]);
-% E = U*S*V';
-
-
-
 end

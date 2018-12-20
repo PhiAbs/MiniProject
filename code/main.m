@@ -2,6 +2,14 @@
 clear; close all; clc;
 ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
+bidirect_thresh = 0.3;
+last_bootstrap_frame_index = 10;
+baseline_thresh = 0.1;
+max_allowed_point_dist = 120;
+harris_rejection_radius = 2;
+p3p_pixel_thresh = 5;
+p3p_num_iter = 5000;
+
 if ds == 0
     path = '../datasets/kitti00/kitti';
     % need to set kitti_path to folder containing "00" and "poses"
@@ -46,10 +54,7 @@ addpath('fundamentalMatrix');
 addpath('p3p');
 
 
-%% Bootstrap
-
-% Use more than two images to keep more keypoints
-last_bootstrap_frame_index = 10;
+% Bootstrap
 
 % store first image
 if ds == 1
@@ -70,7 +75,7 @@ disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
 % disp(['extracted Harris Keypoints: ', num2str(length(points))]);
 
 % add pointtracker object for KLT
-pointTracker = vision.PointTracker('MaxBidirectionalError',0.2);
+pointTracker = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(pointTracker, keypoints_start, image);
 
 image_prev = image;
@@ -88,7 +93,7 @@ for i = 1:last_bootstrap_frame_index
     
     keypoints_latest = points(point_validity, :);
     keypoints_start = keypoints_start(point_validity, :);
-
+    
     % Estimate the essential matrix E 
     p1 = [keypoints_start'; ones(1, length(keypoints_start))];
     pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
@@ -96,23 +101,13 @@ for i = 1:last_bootstrap_frame_index
     [E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
 
     [Rots,u3] = decomposeEssentialMatrix(E);
-    
-%     p1 = p1(:, in_essential);
-%     pend = pend(:, in_essential);
 
     [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, t_C2_W];
     Points3D = linearTriangulation(p1, pend, M1, Mend);
-%     Points3D = linearTriangulation(p1(:, in_essential),pend(:, in_essential),M1,Mend);
-    
-    % store points in our main cell array
-    keypoints_start = p1(1:2, :)';
-    keypoints_latest = pend(1:2, :)';
-%     keypoints_start = p1(1:2, in_essential)';
-%     keypoints_latest = pend(1:2, in_essential)';
-    
+
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
     
@@ -125,13 +120,12 @@ for i = 1:last_bootstrap_frame_index
     % check if camera moved far enough to finish bootstrapping
     avg_depth = mean(Points3D(3,:));
     baseline_dist = norm(t_C2_W);
-    keyframe_selection_thresh = 0.1;
     
     disp(['Ratio baseline_dist / avg_depth: ', ...
         num2str((baseline_dist / avg_depth)), ...
-        ' must be > ', num2str(keyframe_selection_thresh)]);
+        ' must be > ', num2str(baseline_thresh)]);
 
-    if (baseline_dist / avg_depth) > keyframe_selection_thresh
+    if (baseline_dist / avg_depth) > baseline_thresh
         % leave bootstrapping if keyframes are enough far apart
         last_bootstrap_frame_index = i;
         break;
@@ -142,7 +136,27 @@ end
 
 % When keyframe for bootstrapping has been found, we redo the calculation
 % for the essential matrix only with inliers!
+keypoints_start = keypoints_start(in_essential, :);
+keypoints_latest = keypoints_latest(in_essential, :);
 
+p1 = [keypoints_start'; ones(1, length(keypoints_start))];
+pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
+
+[E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
+
+[Rots,u3] = decomposeEssentialMatrix(E);
+
+[R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
+
+M1 = K * eye(3,4);
+Mend = K * [R_C2_W, t_C2_W];
+Points3D = linearTriangulation(p1, pend, M1, Mend);
+
+% Plot stuff
+plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
+
+disp(['Iteration ', num2str(i)]);
+disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
 
 % Extract Harris Features from last bootstrapping image
 % kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
@@ -152,17 +166,15 @@ kp_new_latest_frame = points.Location;
 %%
 
 % remove points that lie behind the first camera or that are far away
-    max_thresh = 120;
-    within_min = Points3D(3, :) > 0;
-    within_max = Points3D(3,:) < max_thresh;
-    Points3D = Points3D(:, (within_min & within_max));
-    keypoints_latest = keypoints_latest((within_min & within_max), :);
+within_min = Points3D(3, :) > 0;
+within_max = Points3D(3,:) < max_allowed_point_dist;
+Points3D = Points3D(:, (within_min & within_max));
+keypoints_latest = keypoints_latest((within_min & within_max), :);
 
 % new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
-rejection_radius = 2;
 kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
-    keypoints_latest', rejection_radius);
+    keypoints_latest', harris_rejection_radius);
 
 % Create Structs for continuous operation
 % Struct S contains
@@ -177,9 +189,9 @@ S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
 % initialize KLT trackers for continuous mode
-tracker_P = vision.PointTracker('MaxBidirectionalError',0.1);
+tracker_P = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_P, S.P', image);
-tracker_C = vision.PointTracker('MaxBidirectionalError',0.1);
+tracker_C = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_C, S.C', image);
 
 figure(21);
@@ -224,9 +236,7 @@ for i = range
 %     Estimate new camera pose using p3p
     disp('run p3p with Ransac on S.P and S.X');
     tic
-    pixel_thresh = 5;
-    num_iter = 5000;
-    [T, S.P, S.X] = ransacLocalization(S.P, S.X, K, pixel_thresh, num_iter);
+    [T, S.P, S.X] = ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
     
 %     Track 
@@ -246,7 +256,6 @@ for i = range
     % Triangulate new points
     disp('try to triangulate S.C and S.F');
     tic
-    baseline_thresh = 0.1;
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh);
     toc
@@ -257,7 +266,7 @@ for i = range
     S.F = S.F(:, ~keep_triang);
     S.X = [S.X, X_new];
     S.Frames = S.Frames(~keep_triang);
-    
+        
     % extract new keypoints
     disp('extract Keypoint')
     tic
@@ -269,7 +278,7 @@ for i = range
     disp('check if extracted Keypoints are new')
     tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
-        [S.P, S.C], rejection_radius);  
+        [S.P, S.C], harris_rejection_radius);  
     toc
     
     S.C = [S.C, kp_new_sorted_out];
