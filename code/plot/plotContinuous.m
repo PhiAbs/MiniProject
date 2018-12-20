@@ -30,7 +30,7 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     figure(21);
     hold on;
     if isempty(X) == 0
-        plot(X(1,:), X(2,:), X(3,:), 'rx');
+        plot3(X(1,:), X(2,:), X(3,:), 'rx');
     end
     hold on;
     grid on;
