@@ -3,6 +3,7 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     % show keypoints that have 3D correspondence
     figure(20);
     subplot(2,2,1);
+    cla;
     imshow(uint8(img_latest));
     hold on;
     title('keypoints with 3D correspondence')
@@ -11,6 +12,7 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     % show candidate keypoints
     figure(20);
     subplot(2,2,2);
+    cla;
     imshow(uint8(img_latest));
     hold on;
     title('candidate keypoints')
@@ -24,11 +26,11 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     plot(T_newest(1,end), T_newest(3,end), 'Marker', 'o');
     title('camera centers (seen top-down)')
 
-    % show triangulated points in 3D plot
+    % show triangulated points in top-down-2D-plot
     figure(21);
     hold on;
     if isempty(X) == 0
-        plot3(X(1,:), X(2,:), X(3,:), 'x');
+        plot(X(1,:), X(2,:), X(3,:), 'rx');
     end
     hold on;
     grid on;

@@ -1,11 +1,11 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 1; % 0: KITTI, 1: Malaga, 2: parking
 
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
 baseline_thresh = 0.1;
-max_allowed_point_dist = 120;
+max_allowed_point_dist = 100;
 harris_rejection_radius = 2;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
@@ -202,7 +202,6 @@ plotContinuous(prev_img, S.X, S.P, S.C, T);
 % TODO: 
 % why does the garage set give bad camera poses??? WTF
 % reproject triangulated points and only keep those that have a small error
-% throw out negative points and points far away in continuous mode
 % bundle adjustment
 
 range = (last_bootstrap_frame_index+1):last_frame;
@@ -260,12 +259,28 @@ for i = range
         S.Frames, K, baseline_thresh);
     toc
     
-    S.P = [S.P, S.C(:, keep_triang)];
-    S.C = S.C(:, ~keep_triang);
-    S.T = S.T(:, ~keep_triang);
-    S.F = S.F(:, ~keep_triang);
-    S.X = [S.X, X_new];
-    S.Frames = S.Frames(~keep_triang);
+    if ~isempty(X_new)
+        % only keep the points that are in front of the camera and not too far
+        % away
+        T_C_W = inv(T);
+        M_C_W = K * T_C_W(1:3,:);
+        X_new_cam = M_C_W * [X_new; ones(1, size(X_new, 2))];
+        points_behind_cam = X_new_cam(3,:) < 0;
+        points_far_away = X_new_cam(3,:) > max_allowed_point_dist;
+        
+        X_new = X_new(:, (~points_far_away & ~points_behind_cam));
+        I = find(keep_triang);
+        I = I(points_behind_cam | points_far_away);
+        keep_triang(I) = 0;
+        
+        S.P = [S.P, S.C(:, keep_triang)];
+        S.X = [S.X, X_new];
+        
+        S.C = S.C(:, ~keep_triang);
+        S.T = S.T(:, ~keep_triang);
+        S.F = S.F(:, ~keep_triang);
+        S.Frames = S.Frames(~keep_triang);
+    end
         
     % extract new keypoints
     disp('extract Keypoint')
