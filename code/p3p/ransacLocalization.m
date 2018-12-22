@@ -1,4 +1,4 @@
-function [T_W_C, P_inlier, X_inlier] = ransacLocalization(P, X, K, pixel_thresh, num_iter)
+function [T_W_C, P_inlier, X_inlier, best_inlier_mask] = ransacLocalization(P, X, K, pixel_thresh, num_iter)
 % query_keypoints should be 2x1000
 % all_matches should be 1x1000 and correspond to the output from the
 %   matchDescriptors() function from exercise 3.

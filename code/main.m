@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 1; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
@@ -9,6 +9,8 @@ max_allowed_point_dist = 100;
 harris_rejection_radius = 2;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
+BA_iter = 1;
+num_BA_frames = 5;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -188,6 +190,16 @@ T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
 S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
+% store data for bundle adjustment
+cameraPoses = struct;
+cameraPoses.ViewID(1) = last_bootstrap_frame_index;
+cameraPoses.Location{1} = T(1:3, end);
+cameraPoses.Orientation{1} = T(1:3, 1:3);
+S.P_BA(:, num_BA_frames, 1) = S.P(1,:)';
+S.P_BA(:, num_BA_frames, 2) = S.P(2,:)';
+S.X_BA = S.X'; 
+
+
 % initialize KLT trackers for continuous mode
 tracker_P = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_P, S.P', image);
@@ -232,11 +244,27 @@ for i = range
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
     
+    % update data for bootstrap
+    S.P_BA(:, 1) = [];
+    S.P_BA(:, end+1, 1) = points_KLT_P(1,:)' .* keep_P;
+    S.P_BA(:, end+1, 2) = points_KLT_P(2,:)' .* keep_P;
+    
+    % create pointTrack objects for no longer tracked points
+    for 
+    
 %     Estimate new camera pose using p3p
     disp('run p3p with Ransac on S.P and S.X');
     tic
-    [T, S.P, S.X] = ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
+    [T, S.P, S.X, best_inlier_mask] = ...
+        ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
+    
+    % update data for bootstrap
+    S.P_BA(:, 1) = [];
+    keep_vector = keep_P & best_inlier_mask;
+    S.P_BA(:, end+1, 1) = points_KLT_P(1,:)' .* keep_P .* best_inlier_mask;
+    S.P_BA(:, end+1, 2) = points_KLT_P(2,:)' .* keep_P .* best_inlier_mask;
+    
     
 %     Track 
     disp('run KLT on S.C');
@@ -276,6 +304,11 @@ for i = range
         S.P = [S.P, S.C(:, keep_triang)];
         S.X = [S.X, X_new];
         
+        % update data for bootstrap
+        S.P_BA(end+1, end, 1) = S.C(1, keep_triang)';
+        S.P_BA(end+1, end, 2) = S.C(2, keep_triang)';
+        S.X_BA(end, :) = X_new';
+        
         S.C = S.C(:, ~keep_triang);
         S.T = S.T(:, ~keep_triang);
         S.F = S.F(:, ~keep_triang);
@@ -304,6 +337,31 @@ for i = range
     setPoints(tracker_C, S.C');
     
     prev_img = image;
+    
+    % add newest camera pose to all camera poses
+    cameraPoses.ViewID(i-last_bootstrap_frame_index+1) = i;
+    cameraPoses.Location{i-last_bootstrap_frame_index+1} = T(1:3, end);
+    cameraPoses.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
+    
+    % bundle adjustment
+    viewIDs = [viewIDs, i];
+    if BA_iter == num_BA_frames
+        for BA_i = 1:length(S.P_BA, 2)
+            pointTracks(i) = pointTrack(viewIDs, points);
+        end
+        
+        cameraPoses_BA = struct;
+        cameraPoses_BA.ViewID(1:num_BA_frames) = cameraPoses.ViewID(;
+        cameraPoses_BA.Location{i-last_bootstrap_frame_index+1} = T(1:3, end);
+        cameraPoses_BA.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
+
+        % load last points into a pointTrack object
+        radialDistortion = [0 0]; 
+        cameraParams = cameraParameters('IntrinsicMatrix', K','RadialDistortion',radialDistortion); 
+        [xyzRefinedPoints,refinedPoses] = ...
+            bundleAdjustment(xyzPoints,pointTracks,cameraPoses,cameraParams);
+        BA_iter = 0;
+    end
 
     disp(['Number of 3D points:' num2str(size(S.X,2))]);
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
