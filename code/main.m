@@ -10,7 +10,7 @@ harris_rejection_radius = 2;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
 BA_iter = 1;
-num_BA_frames = 5;
+num_BA_frames = 10;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -54,7 +54,7 @@ addpath('plot');
 addpath('essentialMatrix');
 addpath('fundamentalMatrix');
 addpath('p3p');
-
+addpath('bundleAdjustment');
 
 % Bootstrap
 
@@ -191,13 +191,14 @@ S.T = T(:)* ones(1, size(S.C, 2));
 S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
 
 % store data for bundle adjustment
-cameraPoses = struct;
-cameraPoses.ViewID(1) = last_bootstrap_frame_index;
-cameraPoses.Location{1} = T(1:3, end);
-cameraPoses.Orientation{1} = T(1:3, 1:3);
+cameraPoses_all = table;
+cameraPoses_all.ViewId(1) = uint32(last_bootstrap_frame_index);
+cameraPoses_all.Orientation{1} = T(1:3, 1:3);
+cameraPoses_all.Location{1} = T(1:3, end)';
 S.P_BA(:, num_BA_frames, 1) = S.P(1,:)';
 S.P_BA(:, num_BA_frames, 2) = S.P(2,:)';
 S.X_BA = S.X'; 
+keep_P_BA = ones(size(S.P, 2), 1);
 
 
 % initialize KLT trackers for continuous mode
@@ -244,13 +245,15 @@ for i = range
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
     
-    % update data for bootstrap
-    S.P_BA(:, 1) = [];
-    S.P_BA(:, end+1, 1) = points_KLT_P(1,:)' .* keep_P;
-    S.P_BA(:, end+1, 2) = points_KLT_P(2,:)' .* keep_P;
-    
-    % create pointTrack objects for no longer tracked points
-    for 
+    % update data for bootstrap: update only the points that can still be
+    % tracked!
+    keep_Index = find(keep_P_BA);
+    keep_Index = keep_Index(keep_P);
+    keep_P_BA = false(size(keep_P_BA));
+    keep_P_BA(keep_Index) = 1;
+    S.P_BA(:, 1, :) = [];
+    S.P_BA(keep_P_BA, end+1, 1) = S.P(1,:);
+    S.P_BA(keep_P_BA, end, 2) = S.P(2,:);
     
 %     Estimate new camera pose using p3p
     disp('run p3p with Ransac on S.P and S.X');
@@ -259,12 +262,14 @@ for i = range
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
     
-    % update data for bootstrap
-    S.P_BA(:, 1) = [];
-    keep_vector = keep_P & best_inlier_mask;
-    S.P_BA(:, end+1, 1) = points_KLT_P(1,:)' .* keep_P .* best_inlier_mask;
-    S.P_BA(:, end+1, 2) = points_KLT_P(2,:)' .* keep_P .* best_inlier_mask;
-    
+    % update data for bootstrap: update only the points that can still be
+    % tracked!
+    keep_Index = find(keep_P_BA);
+    keep_Index = keep_Index(best_inlier_mask);
+    keep_P_BA = false(size(keep_P_BA));
+    keep_P_BA(keep_Index) = 1;
+    S.P_BA(~keep_P_BA, end, 1) = 0;
+    S.P_BA(~keep_P_BA, end, 2) = 0;
     
 %     Track 
     disp('run KLT on S.C');
@@ -288,31 +293,10 @@ for i = range
     toc
     
     if ~isempty(X_new)
-        % only keep the points that are in front of the camera and not too far
-        % away
-        T_C_W = inv(T);
-        M_C_W = K * T_C_W(1:3,:);
-        X_new_cam = M_C_W * [X_new; ones(1, size(X_new, 2))];
-        points_behind_cam = X_new_cam(3,:) < 0;
-        points_far_away = X_new_cam(3,:) > max_allowed_point_dist;
-        
-        X_new = X_new(:, (~points_far_away & ~points_behind_cam));
-        I = find(keep_triang);
-        I = I(points_behind_cam | points_far_away);
-        keep_triang(I) = 0;
-        
-        S.P = [S.P, S.C(:, keep_triang)];
-        S.X = [S.X, X_new];
-        
-        % update data for bootstrap
-        S.P_BA(end+1, end, 1) = S.C(1, keep_triang)';
-        S.P_BA(end+1, end, 2) = S.C(2, keep_triang)';
-        S.X_BA(end, :) = X_new';
-        
-        S.C = S.C(:, ~keep_triang);
-        S.T = S.T(:, ~keep_triang);
-        S.F = S.F(:, ~keep_triang);
-        S.Frames = S.Frames(~keep_triang);
+        % delete points that are far away or that lie behind the camera
+        [S.X, S.P, S.C, S.F, S.T, S.Frames, S.P_BA, S.X_BA, keep_P_BA, X_new] = ...
+            pointSanityCheck(S.X, S.P, S.C, S.F, S.T, S.Frames, S.P_BA, S.X_BA, ...
+            keep_P_BA, T, K, X_new, keep_triang, max_allowed_point_dist);
     end
         
     % extract new keypoints
@@ -339,28 +323,18 @@ for i = range
     prev_img = image;
     
     % add newest camera pose to all camera poses
-    cameraPoses.ViewID(i-last_bootstrap_frame_index+1) = i;
-    cameraPoses.Location{i-last_bootstrap_frame_index+1} = T(1:3, end);
-    cameraPoses.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
+    cameraPoses_all.ViewId(i-last_bootstrap_frame_index+1) = uint32(i);
+    cameraPoses_all.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
+    cameraPoses_all.Location{i-last_bootstrap_frame_index+1} = T(1:3, end)';
     
     % bundle adjustment
-    viewIDs = [viewIDs, i];
     if BA_iter == num_BA_frames
-        for BA_i = 1:length(S.P_BA, 2)
-            pointTracks(i) = pointTrack(viewIDs, points);
-        end
-        
-        cameraPoses_BA = struct;
-        cameraPoses_BA.ViewID(1:num_BA_frames) = cameraPoses.ViewID(;
-        cameraPoses_BA.Location{i-last_bootstrap_frame_index+1} = T(1:3, end);
-        cameraPoses_BA.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
-
-        % load last points into a pointTrack object
-        radialDistortion = [0 0]; 
-        cameraParams = cameraParameters('IntrinsicMatrix', K','RadialDistortion',radialDistortion); 
-        [xyzRefinedPoints,refinedPoses] = ...
-            bundleAdjustment(xyzPoints,pointTracks,cameraPoses,cameraParams);
-        BA_iter = 0;
+        [S.T, S.X, T, cameraPoses_all] = ...
+            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K);
+        plotBundleAdjustment(cameraPoses_all)
+        BA_iter = 1;
+    else
+        BA_iter = BA_iter + 1;
     end
 
     disp(['Number of 3D points:' num2str(size(S.X,2))]);
