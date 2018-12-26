@@ -26,9 +26,9 @@ function plotContinuous(img_latest, X, P, C, T_newest)
     plot(T_newest(1,end), T_newest(3,end), 'Marker', 'o');
     title('camera centers (seen top-down)')
 
-    % show triangulated points in top-down-2D-plot
+    % show triangulated points
     figure(21);
-    hold on;
+    cla;
     if isempty(X) == 0
         plot3(X(1,:), X(2,:), X(3,:), 'rx');
     end

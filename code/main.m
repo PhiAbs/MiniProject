@@ -1,16 +1,16 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 2; % 0: KITTI, 1: Malaga, 2: parking
 
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
 baseline_thresh = 0.1;
 max_allowed_point_dist = 100;
-harris_rejection_radius = 2;
+harris_rejection_radius = 10;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
-BA_iter = 1;
-num_BA_frames = 10;
+BA_iter = 2;
+num_BA_frames = 20;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -235,12 +235,12 @@ for i = range
     % Makes sure that plots refresh.    
     pause(0.01);
     
-    disp('run KLT on S.P');
-    tic
+%     disp('run KLT on S.P');
+%     tic
 %     [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
     % do KLT tracking for keypoints
     [points_KLT_P, keep_P] = tracker_P(image);
-    toc
+%     toc
     
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
@@ -256,11 +256,11 @@ for i = range
     S.P_BA(keep_P_BA, end, 2) = S.P(2,:);
     
 %     Estimate new camera pose using p3p
-    disp('run p3p with Ransac on S.P and S.X');
-    tic
+%     disp('run p3p with Ransac on S.P and S.X');
+%     tic
     [T, S.P, S.X, best_inlier_mask] = ...
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
-    toc
+%     toc
     
     % update data for bootstrap: update only the points that can still be
     % tracked!
@@ -272,11 +272,11 @@ for i = range
     S.P_BA(~keep_P_BA, end, 2) = 0;
     
 %     Track 
-    disp('run KLT on S.C');
-    tic
+%     disp('run KLT on S.C');
+%     tic
 %     [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
     [points_KLT_C, keep_C] = tracker_C(image);
-    toc;
+%     toc;
     
     Frames_old = S.Frames;
     
@@ -286,11 +286,11 @@ for i = range
     S.Frames = S.Frames(keep_C);  
     
     % Triangulate new points
-    disp('try to triangulate S.C and S.F');
-    tic
+%     disp('try to triangulate S.C and S.F');
+%     tic
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh);
-    toc
+%     toc
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
@@ -300,18 +300,18 @@ for i = range
     end
         
     % extract new keypoints
-    disp('extract Keypoint')
-    tic
+%     disp('extract Keypoint')
+%     tic
 %     num_keypoints = 100;
 %     kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
     points = detectHarrisFeatures(image);
     kp_new_latest_frame = points.Location;
-    toc
-    disp('check if extracted Keypoints are new')
-    tic
+%     toc
+%     disp('check if extracted Keypoints are new')
+%     tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
         [S.P, S.C], harris_rejection_radius);  
-    toc
+%     toc
     
     S.C = [S.C, kp_new_sorted_out];
     S.F = [S.F, kp_new_sorted_out];
@@ -329,10 +329,29 @@ for i = range
     
     % bundle adjustment
     if BA_iter == num_BA_frames
-        [S.T, S.X, T, cameraPoses_all] = ...
+        % delete all rows in the BA matrices for which the corresponding
+        % landmarks can no longer be tracked
+        % TODO: here we assume that a zero in the x matrix means that the
+        % corresponding point is not tracked. can we set all non-valid
+        % points to inf or something like that?
+%         disp('bundle adjustment');
+%         tic
+        untracked_landmark_idx = find(sum(S.P_BA(:,:,1), 2) == 0);
+        S.P_BA(untracked_landmark_idx, :, :) = [];
+        S.X_BA(untracked_landmark_idx, :) = [];
+        keep_P_BA(untracked_landmark_idx) = [];
+        
+        [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
             bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K);
+%         toc
+        
+%         disp('plot bundle adjustment')
+%         tic
         plotBundleAdjustment(cameraPoses_all)
-        BA_iter = 1;
+%         toc
+        
+%         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
+        
     else
         BA_iter = BA_iter + 1;
     end
@@ -341,9 +360,12 @@ for i = range
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
     disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
     
-    plotContinuous(image, X_new, S.P, S.C, T);
+%     disp('plot continuous')
+%     tic
+    plotContinuous(image, S.X, S.P, S.C, T);
+%     toc
     
 %     disp(['Frames still in S.C' num2str(unique(S.Frames))];
 
-    plotBarDiagram(S.Frames,Frames_old);
+    % plotBarDiagram(S.Frames,Frames_old);
 end
