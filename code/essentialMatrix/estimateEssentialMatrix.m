@@ -17,7 +17,7 @@ function [E, inliers_b] = estimateEssentialMatrix(p1, p2, K1, K2)
 % [p2_n,T2] = normalise2dpts(p2);
 % 
 [F, inliers_b] = estimateFundamentalMatrix(p1(1:2,:)', p2(1:2,:)', ...
-    'Method','RANSAC', 'NumTrials',5000,'DistanceThreshold',1e-2);
+    'Method','RANSAC', 'NumTrials',20000,'DistanceThreshold',1e-3);
 % 
 % % Undo the normalization
 % F = (T2') * F * T1;

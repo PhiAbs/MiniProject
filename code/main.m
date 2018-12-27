@@ -1,11 +1,11 @@
 %% Setup
 clear; close all; clc;
-ds = 1; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
-baseline_thresh = 0.1;
-max_allowed_point_dist = 100;
+baseline_thresh = 0.2;
+max_allowed_point_dist = 40;
 harris_rejection_radius = 2;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
@@ -67,7 +67,7 @@ end
 % num_keypoints = 200;
 % keypoints get stored as cell array with arrays Nx2, [col, row]
 % keypoints_start = extractHarrisKeypoints(imgb{1}, num_keypoints);
-points = detectHarrisFeatures(image);
+points = detectHarrisFeatures(image,'MinQuality',0.01);
 keypoints_start = points.Location;
 
 disp('Start Bootstrapping');
@@ -102,7 +102,7 @@ for i = 1:last_bootstrap_frame_index
 
     [Rots,u3] = decomposeEssentialMatrix(E);
 
-    [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
+    [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K)
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, t_C2_W];
@@ -124,8 +124,24 @@ for i = 1:last_bootstrap_frame_index
     disp(['Ratio baseline_dist / avg_depth: ', ...
         num2str((baseline_dist / avg_depth)), ...
         ' must be > ', num2str(baseline_thresh)]);
+    
+    % Plot reprojected Points
+    P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
+    error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
+    fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
+    figure(83)
+    clf;
+    imshow(image)
+    hold on;
+    plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
+    hold on;
+    plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
+    hold on;
+    pause(0.01);
 
-    if (baseline_dist / avg_depth) > baseline_thresh
+%     if (baseline_dist / avg_depth) > baseline_thresh
+%     if( error < 10 && i > 3)
+    if(i==1)
         % leave bootstrapping if keyframes are enough far apart
         last_bootstrap_frame_index = i;
         break;
@@ -134,6 +150,7 @@ for i = 1:last_bootstrap_frame_index
     image_prev = image;
 end
 
+%%
 % When keyframe for bootstrapping has been found, we redo the calculation
 % for the essential matrix only with inliers!
 keypoints_start = keypoints_start(in_essential, :);
@@ -152,6 +169,14 @@ M1 = K * eye(3,4);
 Mend = K * [R_C2_W, t_C2_W];
 Points3D = linearTriangulation(p1, pend, M1, Mend);
 
+T=[R_C2_W, t_C2_W;0 0 0 1]^(-1);
+[error, inlier_reprojection] = estimate_projection_error( keypoints_latest, Points3D(1:3,:)', T, K, 1);
+nnz(~inlier_reprojection)
+
+Points3D = Points3D(:,inlier_reprojection);
+keypoints_latest = keypoints_latest(inlier_reprojection,:);
+keypoints_start = keypoints_start(inlier_reprojection,:);
+
 % Plot stuff
 plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
 
@@ -162,6 +187,7 @@ disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_star
 % kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
 points = detectHarrisFeatures(image);
 kp_new_latest_frame = points.Location;
+
 
 %%
 
@@ -194,15 +220,17 @@ initialize(tracker_P, S.P', image);
 tracker_C = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_C, S.C', image);
 
+close all;
 figure(21);
 plot3(0,0,0,'x');
-plotContinuous(prev_img, S.X, S.P, S.C, T);
+plotContinuous(prev_img, S.X, S.X, S.P, S.C, T, K);
 
 %% Continuous operation
 % TODO: 
 % why does the garage set give bad camera poses??? WTF
 % reproject triangulated points and only keep those that have a small error
 % bundle adjustment
+% load('good_bootstrapping_64key.mat');
 
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -309,9 +337,10 @@ for i = range
     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
     disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
     
-    plotContinuous(image, X_new, S.P, S.C, T);
-    
 %     disp(['Frames still in S.C' num2str(unique(S.Frames))];
 
     plotBarDiagram(S.Frames,Frames_old);
+    plotContinuous(image, X_new, S.X, S.P, S.C, T, K);
+    T
+    
 end
