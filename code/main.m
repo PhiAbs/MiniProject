@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 2; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
@@ -108,7 +108,10 @@ for i = 1:last_bootstrap_frame_index
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, t_C2_W];
-    Points3D = linearTriangulation(p1, pend, M1, Mend);
+%     Points3D = linearTriangulation(p1, pend, M1, Mend);
+    [worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
+        pend(1:2, :)', M1', Mend');
+    Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
 
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
@@ -152,7 +155,10 @@ pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
 
 M1 = K * eye(3,4);
 Mend = K * [R_C2_W, t_C2_W];
-Points3D = linearTriangulation(p1, pend, M1, Mend);
+% Points3D = linearTriangulation(p1, pend, M1, Mend);
+[worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
+    pend(1:2, :)', M1', Mend');
+Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
 
 % Plot stuff
 plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);

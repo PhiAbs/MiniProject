@@ -35,9 +35,12 @@ for frame=unique(Frames)
     Mf = K * Tf_C_W(1:3,:);
 %     Mf = K * Tf(1:3,:);
     
-    % TODO: only keep points that are triangulated with a min. accuracy!
-    X = linearTriangulation(f,c,Mf,Mc);
-    X = X(1:3,:);
+%     % TODO: only keep points that are triangulated with a min. accuracy!
+%     X = linearTriangulation(f,c,Mf,Mc);
+%     X = X(1:3,:);
+    [worldPoints, reprojectionErrors] = triangulate(f(1:2, :)', ...
+        c(1:2, :)', Mf', Mc');
+    X = worldPoints';
     
     % check if baseline is reached AND if points lie within allowed range
     if(checkBaseline(X, T, Tf(:,end), baseline_thresh))
