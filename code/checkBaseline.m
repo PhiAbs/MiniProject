@@ -14,7 +14,7 @@ for i=1:size(X,2)
     depth(i) = P_current(3);    
 end
 
-avg_depth = mean(depth);
+avg_depth = median(depth); % USED TO BE MEAN
 
 if(baseline/avg_depth > threshold)
     keep = true;
