@@ -5,9 +5,9 @@ ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 bidirect_thresh = 0.3;
 last_bootstrap_frame_index = 10;
 harris_num_image_splits = 5;
-baseline_thresh = 0.2;
-max_allowed_point_dist = 40;
-harris_rejection_radius = 2;
+baseline_thresh = 0.1;
+max_allowed_point_dist = 80;
+harris_rejection_radius = 10;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
 BA_iter = 2;
@@ -415,7 +415,7 @@ for i = range
         
 %         disp('plot bundle adjustment')
 %         tic
-%         plotBundleAdjustment(cameraPoses_all)
+        plotBundleAdjustment(cameraPoses_all)
 %         toc
         
 %         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
