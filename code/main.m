@@ -7,6 +7,7 @@ last_bootstrap_frame_index = 10;
 baseline_thresh = 0.1;
 max_allowed_point_dist = 100;
 harris_rejection_radius = 10;
+harris_num_image_splits = 5;
 p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
 BA_iter = 2;
@@ -70,7 +71,25 @@ end
 % num_keypoints = 200;
 % keypoints get stored as cell array with arrays Nx2, [col, row]
 % keypoints_start = extractHarrisKeypoints(imgb{1}, num_keypoints);
-points = detectHarrisFeatures(image);
+region_size = floor(size(image,2) / harris_num_image_splits);
+edge = 1;
+for i = 1:harris_num_image_splits
+    region = [edge, 1, region_size, size(image,1)];
+    
+    if i == 1
+        points = detectHarrisFeatures(image, 'ROI', region);
+    else
+        points = [points; detectHarrisFeatures(image, 'ROI', region)];
+    end
+    
+    if i == harris_num_image_splits - 1
+        edge = edge + region_size;
+        region_size = size(image,2) - edge;
+    else
+        edge = edge + region_size;
+    end
+end
+
 keypoints_start = points.Location;
 
 disp('Start Bootstrapping');
@@ -368,7 +387,7 @@ for i = range
         
 %         disp('plot bundle adjustment')
 %         tic
-        plotBundleAdjustment(cameraPoses_all)
+%         plotBundleAdjustment(cameraPoses_all)
 %         toc
         
 %         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
@@ -383,7 +402,7 @@ for i = range
     
 %     disp('plot continuous')
 %     tic
-    plotContinuous(image, S.X, S.P, S.C, T);
+%     plotContinuous(image, S.X, S.P, S.C, T);
 %     toc
     
 %     disp(['Frames still in S.C' num2str(unique(S.Frames))];
