@@ -11,6 +11,7 @@ p3p_pixel_thresh = 5;
 p3p_num_iter = 5000;
 BA_iter = 2;
 num_BA_frames = 20;
+reprojection_thresh = 10;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -112,6 +113,15 @@ for i = 1:last_bootstrap_frame_index
     [worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
         pend(1:2, :)', M1', Mend');
     Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
+    
+    % remove points that have a large reprojection error
+    keep_reprojected = (reprojectionErrors < reprojection_thresh);
+    Points3D = Points3D(:, keep_reprojected);
+    keypoints_start = keypoints_start(keep_reprojected, :);
+    keypoints_latest = keypoints_latest(keep_reprojected, :);
+    
+    disp([' number of removed keypoints: ' num2str(sum(~keep_reprojected))]);
+    
 
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
@@ -159,6 +169,12 @@ Mend = K * [R_C2_W, t_C2_W];
 [worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
     pend(1:2, :)', M1', Mend');
 Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
+
+% remove points that have a large reprojection error
+keep_reprojected = (reprojectionErrors < reprojection_thresh);
+Points3D = Points3D(:, keep_reprojected);
+keypoints_start = keypoints_start(keep_reprojected, :);
+keypoints_latest = keypoints_latest(keep_reprojected, :);
 
 % Plot stuff
 plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
@@ -300,9 +316,8 @@ for i = range
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
-        [S.X, S.P, S.C, S.F, S.T, S.Frames, S.P_BA, S.X_BA, keep_P_BA, X_new] = ...
-            pointSanityCheck(S.X, S.P, S.C, S.F, S.T, S.Frames, S.P_BA, S.X_BA, ...
-            keep_P_BA, T, K, X_new, keep_triang, max_allowed_point_dist);
+        [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, K, ...
+            X_new, keep_triang, max_allowed_point_dist);
     end
         
     % extract new keypoints
@@ -362,9 +377,9 @@ for i = range
         BA_iter = BA_iter + 1;
     end
 
-    disp(['Number of 3D points:' num2str(size(S.X,2))]);
-    disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
-    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+%     disp(['Number of 3D points:' num2str(size(S.X,2))]);
+%     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
+%     disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
     
 %     disp('plot continuous')
 %     tic
