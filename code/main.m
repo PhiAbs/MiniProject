@@ -70,6 +70,9 @@ end
 points = detectHarrisFeatures(image,'MinQuality',0.01);
 keypoints_start = points.Location;
 
+keep = all(keypoints_start < [300 160] | keypoints_start > [941 306],2)
+keypoints_start=keypoints_start(keep,:);
+
 disp('Start Bootstrapping');
 disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
 % disp(['extracted Harris Keypoints: ', num2str(length(points))]);
@@ -79,6 +82,10 @@ pointTracker = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(pointTracker, keypoints_start, image);
 
 image_prev = image;
+
+% imshow(image)
+% hold on;
+% plot(keypoints_start(:,1),keypoints_start(:,2),'rd')
 
 for i = 1:last_bootstrap_frame_index
     % iteratively add more images if neccessary
@@ -136,7 +143,11 @@ for i = 1:last_bootstrap_frame_index
     plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
     hold on;
     plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
-    hold on;
+%     hold on;
+%     plot(P_reprojected(~in_essential,1),P_reprojected(~in_essential,2),'bs','linewidth',1.5)
+%     hold on;
+%     plot(keypoints_latest(~in_essential,1),keypoints_latest(~in_essential,2),'rd','linewidth',1.5)
+%     hold on;
     pause(0.01);
 
 %     if (baseline_dist / avg_depth) > baseline_thresh
@@ -169,13 +180,13 @@ M1 = K * eye(3,4);
 Mend = K * [R_C2_W, t_C2_W];
 Points3D = linearTriangulation(p1, pend, M1, Mend);
 
-T=[R_C2_W, t_C2_W;0 0 0 1]^(-1);
-[error, inlier_reprojection] = estimate_projection_error( keypoints_latest, Points3D(1:3,:)', T, K, 1);
-nnz(~inlier_reprojection)
-
-Points3D = Points3D(:,inlier_reprojection);
-keypoints_latest = keypoints_latest(inlier_reprojection,:);
-keypoints_start = keypoints_start(inlier_reprojection,:);
+% T=[R_C2_W, t_C2_W;0 0 0 1]^(-1);
+% [error, inlier_reprojection] = estimate_projection_error( keypoints_latest, Points3D(1:3,:)', T, K, 1);
+% nnz(~inlier_reprojection)
+% 
+% Points3D = Points3D(:,inlier_reprojection);
+% keypoints_latest = keypoints_latest(inlier_reprojection,:);
+% keypoints_start = keypoints_start(inlier_reprojection,:);
 
 % Plot stuff
 plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
