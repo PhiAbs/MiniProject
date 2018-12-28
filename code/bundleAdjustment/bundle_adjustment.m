@@ -1,6 +1,6 @@
 function [X_BA_refined, S_T, X_refined, T_refined, cameraPoses_all] = ...
     bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K)
-% Do bundle adjustment for a sliding window
+% Do bundle adjustment over a sliding window
 
 iterator = 1;
 for BA_i = 1:size(S.P_BA, 1)
@@ -46,11 +46,6 @@ X_tracked_long_enough = S.X_BA(tracked_long_enough, :);
     [refinedPoints3D, refinedPoses, reprojectionErrors] = ...
         bundleAdjustment(X_tracked_long_enough, pointTracks, ...
         cameraPoses, cameraParams, 'FixedViewId', fixed_views, 'PointsUndistorted', true);
-    % [refinedPoints3D, refinedPoses] = ...
-    %     bundleAdjustment(S.X_BA(tracked_long_enough, :), pointTracks, ...
-    %     cameraPoses, cameraParams, 'FixedViewId', 1, 'PointsUndistorted', true);
-    % [refinedPoints3D, refinedPoses] = ...
-    %     bundleAdjustment(S.X_BA(tracked_long_enough, :), pointTracks, cameraPoses, cameraParams, 'PointsUndistorted', true);
     
     % find all points with large reprojection errors and rerun BA without
     % these points

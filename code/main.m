@@ -8,11 +8,12 @@ baseline_thresh = 0.1;
 max_allowed_point_dist = 100;
 harris_rejection_radius = 10;
 harris_num_image_splits = 5;
-p3p_pixel_thresh = 5;
+p3p_pixel_thresh = 1;
 p3p_num_iter = 5000;
 BA_iter = 2;
 num_BA_frames = 20;
-reprojection_thresh = 10;
+reprojection_thresh = 15;
+plot_stuff = false;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -49,16 +50,12 @@ else
 end
 
 % add paths to subfolders
-addpath('helpers');
-addpath('klt');
-addpath('harris');
 addpath('plot');
 addpath('essentialMatrix');
-addpath('fundamentalMatrix');
 addpath('p3p');
 addpath('bundleAdjustment');
 
-% Bootstrap
+%% Bootstrap
 
 % store first image
 if ds == 1
@@ -67,34 +64,12 @@ else
     image = uint8(loadImage(ds, 1, path));
 end
 
-% number of keypoints we want to extract from first imaeg
-% num_keypoints = 200;
-% keypoints get stored as cell array with arrays Nx2, [col, row]
-% keypoints_start = extractHarrisKeypoints(imgb{1}, num_keypoints);
-region_size = floor(size(image,2) / harris_num_image_splits);
-edge = 1;
-for i = 1:harris_num_image_splits
-    region = [edge, 1, region_size, size(image,1)];
-    
-    if i == 1
-        points = detectHarrisFeatures(image, 'ROI', region);
-    else
-        points = [points; detectHarrisFeatures(image, 'ROI', region)];
-    end
-    
-    if i == harris_num_image_splits - 1
-        edge = edge + region_size;
-        region_size = size(image,2) - edge;
-    else
-        edge = edge + region_size;
-    end
-end
+points = detectHarrisFeatures(image, 'MinQuality',0.01);
 
 keypoints_start = points.Location;
 
 disp('Start Bootstrapping');
 disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
-% disp(['extracted Harris Keypoints: ', num2str(length(points))]);
 
 % add pointtracker object for KLT
 pointTracker = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
@@ -117,18 +92,19 @@ for i = 1:last_bootstrap_frame_index
     keypoints_start = keypoints_start(point_validity, :);
     
     % Estimate the essential matrix E 
-    p1 = [keypoints_start'; ones(1, length(keypoints_start))];
-    pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
-
-    [E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
+    cameraParams = cameraParameters('IntrinsicMatrix',K');
+    [E, in_essential] = estimateEssentialMatrix(keypoints_start, ...
+        keypoints_latest, cameraParams, 'MaxNumTrials', 2000, 'MaxDistance', 0.1);
 
     [Rots,u3] = decomposeEssentialMatrix(E);
-
+    
+    p1 = [keypoints_start'; ones(1, length(keypoints_start))];
+    pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
+    
     [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
     M1 = K * eye(3,4);
     Mend = K * [R_C2_W, t_C2_W];
-%     Points3D = linearTriangulation(p1, pend, M1, Mend);
     [worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
         pend(1:2, :)', M1', Mend');
     Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
@@ -140,16 +116,19 @@ for i = 1:last_bootstrap_frame_index
     keypoints_latest = keypoints_latest(keep_reprojected, :);
     
     disp([' number of removed keypoints: ' num2str(sum(~keep_reprojected))]);
-    
 
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
     
     % Plot stuff
-    plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
+    if plot_stuff
+        plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, ...
+            Points3D, R_C2_W, t_C2_W);
+    end
     
     disp(['Iteration ', num2str(i)]);
-    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
+    disp(['Keypoints in Image nr', num2str(i+1), ': ', ...
+        num2str(length(keypoints_start))]);
 
     % check if camera moved far enough to finish bootstrapping
     avg_depth = mean(Points3D(3,:));
@@ -159,7 +138,23 @@ for i = 1:last_bootstrap_frame_index
         num2str((baseline_dist / avg_depth)), ...
         ' must be > ', num2str(baseline_thresh)]);
 
-    if (baseline_dist / avg_depth) > baseline_thresh
+    % Plot reprojected Points
+    if plot_stuff
+        P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
+        error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
+        fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
+        figure(83)
+        clf;
+        imshow(image)
+        hold on;
+        plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
+        hold on;
+        plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
+        hold on;
+        pause(0.01);
+    end
+    
+    if i == 2
         % leave bootstrapping if keyframes are enough far apart
         last_bootstrap_frame_index = i;
         break;
@@ -176,7 +171,8 @@ keypoints_latest = keypoints_latest(in_essential, :);
 p1 = [keypoints_start'; ones(1, length(keypoints_start))];
 pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
 
-[E, in_essential] = estimateEssentialMatrix(p1, pend, K, K);
+cameraParams = cameraParameters('IntrinsicMatrix',K');
+[E, in_essential] = estimateEssentialMatrix(keypoints_start, keypoints_latest, cameraParams);
 
 [Rots,u3] = decomposeEssentialMatrix(E);
 
@@ -184,10 +180,14 @@ pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
 
 M1 = K * eye(3,4);
 Mend = K * [R_C2_W, t_C2_W];
-% Points3D = linearTriangulation(p1, pend, M1, Mend);
 [worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
     pend(1:2, :)', M1', Mend');
 Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
+
+T=[R_C2_W, t_C2_W;0 0 0 1]^(-1);
+[error, inlier_reprojection] = estimate_projection_error( ...
+    keypoints_latest, Points3D(1:3,:)', T, K, 1);
+nnz(~inlier_reprojection)
 
 % remove points that have a large reprojection error
 keep_reprojected = (reprojectionErrors < reprojection_thresh);
@@ -196,7 +196,9 @@ keypoints_start = keypoints_start(keep_reprojected, :);
 keypoints_latest = keypoints_latest(keep_reprojected, :);
 
 % Plot stuff
-plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
+if plot_stuff
+    plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
+end
 
 disp(['Iteration ', num2str(i)]);
 disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
@@ -248,15 +250,12 @@ initialize(tracker_P, S.P', image);
 tracker_C = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_C, S.C', image);
 
-figure(21);
-plot3(0,0,0,'x');
-plotContinuous(prev_img, S.X, S.P, S.C, T);
-
+if plot_stuff
+    figure(21);
+    plot3(0,0,0,'x');
+    plotContinuous(prev_img, S.X, S.X, S.P, S.C, T, K);
+end
 %% Continuous operation
-% TODO: 
-% why does the garage set give bad camera poses??? WTF
-% reproject triangulated points and only keep those that have a small error
-% bundle adjustment
 
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -276,12 +275,11 @@ for i = range
     % Makes sure that plots refresh.    
     pause(0.01);
     
-%     disp('run KLT on S.P');
-%     tic
-%     [keep_P, P_delta] = runKLTContinuous(S.P, image, prev_img);
-    % do KLT tracking for keypoints
+    disp('run KLT on S.P');
+    tic
+%     do KLT tracking for keypoints
     [points_KLT_P, keep_P] = tracker_P(image);
-%     toc
+    toc
     
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
@@ -297,11 +295,11 @@ for i = range
     S.P_BA(keep_P_BA, end, 2) = S.P(2,:);
     
 %     Estimate new camera pose using p3p
-%     disp('run p3p with Ransac on S.P and S.X');
-%     tic
+    disp('run p3p with Ransac on S.P and S.X');
+    tic
     [T, S.P, S.X, best_inlier_mask] = ...
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
-%     toc
+    toc
     
     % update data for bootstrap: update only the points that can still be
     % tracked!
@@ -313,11 +311,10 @@ for i = range
     S.P_BA(~keep_P_BA, end, 2) = 0;
     
 %     Track 
-%     disp('run KLT on S.C');
-%     tic
-%     [keep_C, C_delta] = runKLTContinuous(S.C, image, prev_img);
+    disp('run KLT on S.C');
+    tic
     [points_KLT_C, keep_C] = tracker_C(image);
-%     toc;
+    toc;
     
     Frames_old = S.Frames;
     
@@ -327,31 +324,31 @@ for i = range
     S.Frames = S.Frames(keep_C);  
     
     % Triangulate new points
-%     disp('try to triangulate S.C and S.F');
-%     tic
-    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
-        S.Frames, K, baseline_thresh);
-%     toc
+    disp('try to triangulate S.C and S.F');
+    tic
+    [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
+        S.Frames, K, baseline_thresh, reprojection_thresh);
+    toc
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
         [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, K, ...
-            X_new, keep_triang, max_allowed_point_dist);
+            X_new, keep_triang, logical(keep_reprojected), max_allowed_point_dist);
+        disp(['points with large reprojection error (sorted out): ', ...
+            num2str(sum(~keep_reprojected))]);
     end
         
     % extract new keypoints
-%     disp('extract Keypoint')
-%     tic
-%     num_keypoints = 100;
-%     kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
+    disp('extract Keypoint')
+    tic
     points = detectHarrisFeatures(image);
     kp_new_latest_frame = points.Location;
-%     toc
-%     disp('check if extracted Keypoints are new')
-%     tic
+    toc
+    disp('check if extracted Keypoints are new')
+    tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
         [S.P, S.C], harris_rejection_radius);  
-%     toc
+    toc
     
     S.C = [S.C, kp_new_sorted_out];
     S.F = [S.F, kp_new_sorted_out];
@@ -363,49 +360,55 @@ for i = range
     prev_img = image;
     
     % add newest camera pose to all camera poses
-    cameraPoses_all.ViewId(i-last_bootstrap_frame_index+1) = uint32(i);
-    cameraPoses_all.Orientation{i-last_bootstrap_frame_index+1} = T(1:3, 1:3);
-    cameraPoses_all.Location{i-last_bootstrap_frame_index+1} = T(1:3, end)';
+    cameraPoses_new = table;
+    cameraPoses_new.ViewId(1) = uint32(i);
+    cameraPoses_new.Orientation{1} = T(1:3, 1:3);
+    cameraPoses_new.Location{1} = T(1:3, end)';
+    cameraPoses_all = [cameraPoses_all; cameraPoses_new];
     
-    % bundle adjustment
-    if BA_iter == num_BA_frames
-        % delete all rows in the BA matrices for which the corresponding
-        % landmarks can no longer be tracked
-        % TODO: here we assume that a zero in the x matrix means that the
-        % corresponding point is not tracked. can we set all non-valid
-        % points to inf or something like that?
+%     % bundle adjustment
+%     if BA_iter == num_BA_frames
+%         % delete all rows in the BA matrices for which the corresponding
+%         % landmarks can no longer be tracked
+%         % TODO: here we assume that a zero in the x matrix means that the
+%         % corresponding point is not tracked. can we set all non-valid
+%         % points to inf or something like that?
 %         disp('bundle adjustment');
 %         tic
-        untracked_landmark_idx = find(sum(S.P_BA(:,:,1), 2) == 0);
-        S.P_BA(untracked_landmark_idx, :, :) = [];
-        S.X_BA(untracked_landmark_idx, :) = [];
-        keep_P_BA(untracked_landmark_idx) = [];
-        
-        [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
-            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K);
+%         untracked_landmark_idx = find(sum(S.P_BA(:,:,1), 2) == 0);
+%         S.P_BA(untracked_landmark_idx, :, :) = [];
+%         S.X_BA(untracked_landmark_idx, :) = [];
+%         keep_P_BA(untracked_landmark_idx) = [];
+%         
+%         [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
+%             bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K);
 %         toc
-        
-%         disp('plot bundle adjustment')
-%         tic
-%         plotBundleAdjustment(cameraPoses_all)
-%         toc
-        
-%         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
-        
-    else
-        BA_iter = BA_iter + 1;
+%         
+%         if plot_stuff  
+    %         disp('plot bundle adjustment')
+    %         tic
+    %         plotBundleAdjustment(cameraPoses_all)
+    %         toc
+%         end
+%         
+% %         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
+%         
+%     else
+%         BA_iter = BA_iter + 1;
+%     end
+
+    disp(['Number of 3D points:' num2str(size(S.X,2))]);
+    disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
+    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+    
+    if plot_stuff
+        disp('plot continuous')
+        tic
+    %     plotContinuous(image, S.X, S.P, S.C, T);
+        plotContinuous(image, X_new, S.X, S.P, S.C, T, K);
+        toc
+
+        disp(['Frames still in S.C' num2str(unique(S.Frames))]);
+        plotBarDiagram(S.Frames,Frames_old);
     end
-
-%     disp(['Number of 3D points:' num2str(size(S.X,2))]);
-%     disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
-%     disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
-    
-%     disp('plot continuous')
-%     tic
-%     plotContinuous(image, S.X, S.P, S.C, T);
-%     toc
-    
-%     disp(['Frames still in S.C' num2str(unique(S.Frames))];
-
-    % plotBarDiagram(S.Frames,Frames_old);
 end

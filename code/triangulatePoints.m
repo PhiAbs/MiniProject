@@ -1,5 +1,5 @@
-function [keep_triang, X_new] = ...
-    triangulatePoints(C, F, T, T_mat, Frames,K, baseline_thresh)
+function [keep_triang, keep_reprojected, X_new] = ...
+    triangulatePoints(C, F, T, T_mat, Frames,K, baseline_thresh, reprojection_thresh)
 %triangulatePoints triangulates every point. 
 % input:
 % C: all keypoints in current frame in pixel coordinates, 2xM
@@ -12,17 +12,17 @@ function [keep_triang, X_new] = ...
 % keep_triang: logical vector, containing ones for points in C for 
 % which baseline is large enough 1xN
 % X_new: stores newly triangulated points, 3xnnz(keep_triang)
+% keep_reprojected: boolean vector containing information whether a point
+% can be kept or if its reprojection error is too large
 
 keep_triang = false(1,size(C,2));
+keep_reprojected = [];
 X_new = [];
 
 % invert matrix to get T_C_W
 T_C_W = inv(T);
 Mc = K * T_C_W(1:3,:);
-% Mc = K * T(1:3,:);
 
-
-% for i=1:size(C,2)
 for frame=unique(Frames)
     
     sameFrame = Frames == frame;
@@ -33,17 +33,20 @@ for frame=unique(Frames)
     Tf = (reshape(T_mat(:,find(sameFrame == 1,1)),[4 4]));
     Tf_C_W = inv(Tf);
     Mf = K * Tf_C_W(1:3,:);
-%     Mf = K * Tf(1:3,:);
     
 %     % TODO: only keep points that are triangulated with a min. accuracy!
-%     X = linearTriangulation(f,c,Mf,Mc);
-%     X = X(1:3,:);
     [worldPoints, reprojectionErrors] = triangulate(f(1:2, :)', ...
         c(1:2, :)', Mf', Mc');
     X = worldPoints';
     
     % check if baseline is reached AND if points lie within allowed range
     if(checkBaseline(X, T, Tf(:,end), baseline_thresh))
+        % remove points that have a large reprojection error. the
+        % keep_reprojected vector has the same length as the newly added 3D
+        % points!
+        keep_reprojected = ...
+            [keep_reprojected; (reprojectionErrors < reprojection_thresh)];
+        
         keep_triang = keep_triang | sameFrame;
         X_new = [X_new X];
     end
