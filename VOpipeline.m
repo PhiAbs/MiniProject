@@ -15,6 +15,9 @@ cameraParams = cameraParameters('IntrinsicMatrix',K');
 anglex = K(1,3)/K(1,1);
 angley = K(2,3)/K(2,2);
 
+% parameters
+repro_thres = 10;
+
 
 %% Bootstrapping
 
@@ -39,9 +42,8 @@ confidence = confidence(keep);
 % subplot(2,1,2)
 % stem3(kps(:,1),kps(:,2),confidence,'fill'); view(-25,30);
 
-%% estimate Fundamental Matrix and initial pose
-
-
+% % -----------------------------------------------------------------------
+% estimate Fundamental Matrix and initial pose
 [F, keep] = estimateFundamentalMatrix(kps,kpl);
 % E2 = K'*F*K;
 % [E, keep] = estimateEssentialMatrix(kps,kpl,cameraParams);
@@ -52,12 +54,12 @@ kpl = kpl(keep,:);
 % showMatchedFeatures(img0,img1,kps,kpl)
 
 % [R_C_W,t_C_W] = relativeCameraPose(E,cameraParams,kps,kpl)
-[R_W_C,t_W_C] = relativeCameraPose(F,cameraParams,kps,kpl);
-T_CW = [R_W_C',-R_W_C'*t_W_C'];
+[R_W_C,t_WC] = relativeCameraPose(F,cameraParams,kps,kpl);
+T_CW = [R_W_C,-R_W_C*t_WC'];
 
-%% triangulate Points
-
-M = cameraMatrix(cameraParams,R_W_C',-R_W_C'*t_W_C'); % = (K*T_CW)' but not exactly equal
+% % -----------------------------------------------------------------------
+% triangulate Points
+M = cameraMatrix(cameraParams,R_W_C,t_WC); % = (K*T_CW)' but not exactly equal
 
 S.P = kpl;
 [S.X, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
@@ -85,6 +87,10 @@ img = img1;
 T = T_CW;
 clear img0 img1 reprojection_error F T_CW;
 
+sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
+     nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2))<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
+        nnz(~(reprojectionErrors<repro_thres))];
+
 for i=2:last_frame
     
     % get new image
@@ -97,7 +103,8 @@ for i=2:last_frame
     trackC = vision.PointTracker('MaxBidirectionalError',0.3);
     initialize(trackC, S.C, img_prev);
     
-    [points, keepP] = trackP(img);
+    [points, keepP, confidence] = trackP(img);
+%     showMatchedFeatures(img_prev,img,S.P(keepP,:),points(keepP,:))
     S.P = points(keepP,:);
     S.X = S.X(keepP,:);
     [points, keepC] = trackC(img);
@@ -116,16 +123,20 @@ for i=2:last_frame
 
     % triangulate S.C and S.F
     Xnew = []; reprojectionErrors = [];
-    for i=1: size(S.C,1)
-        [new, reprojectionError] = triangulate( S.F(i,:), S.C(i,:), (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
+    for j=1: size(S.C,1)
+        [new, reprojectionError] = triangulate( S.F(j,:), S.C(j,:), (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
         Xnew = [Xnew; new];
         reprojectionErrors = [reprojectionErrors; reprojectionError];
     end
-
-    keep = all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))) & reprojectionErrors < 2 ,2);   
+    
+    keep = all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))) &...
+        reprojectionErrors < repro_thres ,2); 
+    sizes = [sizes; i size(S.P,1) size(S.C,1) nnz(keep)...
+        nnz(~(all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))),2)))...
+        nnz(~(reprojectionErrors < repro_thres))];
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors<2, ...
-        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC)
+    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors<repro_thres, ...
+        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC, sizes)
 %     pause(2);
     
     Xnew = Xnew(keep,:);
@@ -156,7 +167,7 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
     figure(11)
     set(gcf,'units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
     % plot upper image with 3D correspondences
-    subplot(3,3,1:6)
+    subplot(2,3,1:3)
     hold off;
     imshow(image);
     hold on;
@@ -173,21 +184,27 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
     
     
     % bar diagram with sizes of different matrices
+    subplot(2,3,4)
+    bar(sizes(:,1),sizes(:,2:end))
+    legend('#-landmarks','#-tracked keypoints','#-newly triangulated',...
+        '#-outside viewing angle','#-error too big')
+    title('Array sizes over frames')
     
     
     % plot lower left as 2D point cloud
-    subplot(3,3,8)
+    subplot(2,3,5)
     hold on;
     plot(Xnew(keepGreater0&keepReprojection,1),Xnew(keepGreater0&keepReprojection,3),...
         'bx','linewidth',1.5);
     plot(X(:,1),X(:,3),'rx','linewidth',1.5);
+    legend('newly triangulated','old landmarks')
     title('2D Pointcloud')
     xlabel('x')
     ylabel('z')
     
     
     % plot Camera Positions
-    subplot(3,3,9)
+    subplot(2,3,6)
     hold on;
     plot(t_WC(1),t_WC(3),'rx','linewidth',3)
     title('Camera Position')
