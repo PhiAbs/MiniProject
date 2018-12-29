@@ -18,20 +18,18 @@ cameraParams = cameraParameters('IntrinsicMatrix',K');
 anglex = K(1,3)/K(1,1);
 angley = K(2,3)/K(2,2);
 
+% paths to functions
+addpath('code')
+
 % parameters
 repro_thres = 10;
 bidirect_thresh = 0.3; % TODO  0.3: good
-last_bootstrap_frame_index = 2;  %TODO
-baseline_thresh = 0.1;
 maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-max_allowed_point_dist = 150;  %TODO  100: good 150: good especially for parking
 minQuality_Harris = 0.01;  %TODO  0.1: good
 harris_rejection_radius = 5; %TODO 10: good for kitti
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 5000;
-BA_iter = 2;
-num_BA_frames = 20;
 reprojection_thresh = 30;  %15: good. 10000: not so good for kitti, good for parking
 
 
@@ -67,17 +65,18 @@ kpl = kpl(keep,:);
 % subplot(2,1,2)
 % showMatchedFeatures(img0,img1,kps,kpl)
 
-[R_W_C,t_W_C] = relativeCameraPose(E,cameraParams,kps,kpl);
+[R_WC,t_WC] = relativeCameraPose(E,cameraParams,kps,kpl);
 % transform to our system
-R_W_C = R_W_C';
-t_W_C = t_W_C';
-T_WC = [R_W_C,t_W_C];
+R_WC = R_WC';
+t_WC = t_WC';
+T_WC = [R_WC,t_WC];
 
-T_CW = [R_W_C',-R_W_C'*t_W_C];
+T_CW = [R_WC',-R_WC'*t_WC];
 
 %% triangulate Points
-M = cameraMatrix(cameraParams,R_W_C', t_W_C'); 
-M = (K*T_WC)';
+% M = cameraMatrix(cameraParams,R_W_C', t_W_C'); % this would be the other
+% convention for triangulate...
+M = (K*T_CW)';
 
 S.P = kpl;
 [S.X, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
@@ -106,7 +105,7 @@ T = T_CW;
 clear img0 img1 reprojection_error F T_CW;
 
 sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
-     nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2))<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
+     nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
         nnz(~(reprojectionErrors<repro_thres))];
 
 for i=2:last_frame
@@ -144,19 +143,20 @@ for i=2:last_frame
     % triangulate S.C and S.F
     Xnew = []; reprojectionErrors = [];
     for j=1: size(S.C,1)
-        [new, reprojectionError] = triangulate( S.F(j,:), S.C(j,:), (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
+        [new, reprojectionError] = triangulate( S.F(j,:), S.C(j,:), ...
+            (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
         Xnew = [Xnew; new];
         reprojectionErrors = [reprojectionErrors; reprojectionError];
     end
     
-    keep = all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))) &...
+    keep = all((abs(Xnew(:,1:2)-t_WC(1:2)')<[anglex angley].*(Xnew(:,3)-t_WC(3))) &...
         reprojectionErrors < repro_thres ,2); 
     sizes = [sizes; i size(S.P,1) size(S.C,1) nnz(keep)...
-        nnz(~(all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))),2)))...
+        nnz(~(all((abs(Xnew(:,1:2)-t_WC(1:2)')<[anglex angley].*(Xnew(:,3)-t_WC(3))),2)))...
         nnz(~(reprojectionErrors < repro_thres))];
     % plot for debugging and tuning
     plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors<repro_thres, ...
-        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC, sizes)
+        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC', sizes)
 %     pause(2);
     
     Xnew = Xnew(keep,:);
@@ -170,10 +170,19 @@ for i=2:last_frame
     % extract new Keypints
     points = detectHarrisFeatures(img,'MinQuality', minQuality_Harris);
     kpl = points.Location;  %keypoint_latest
-    keep = ~ismember(kpl,[S.P; S.C],'rows');
-    S.C = [S.C; kpl(keep,:)];
-    S.T = [S.T, T_CW(:) * ones(1,nnz(keep))];
-    S.F = [S.F; kpl(keep,:)];
+%     keep = ~ismember(kpl,[S.P; S.C],'rows');
+%     S.C = [S.C; kpl(keep,:)];
+%     S.T = [S.T, T_CW(:) * ones(1,nnz(keep))];
+%     S.F = [S.F; kpl(keep,:)];
+    
+    % make sure that the same keypoint does not get tracked more than once
+    kp_new_sorted_out = checkIfKeypointIsNew(kpl', ...
+        [(S.P)', (S.C)'], harris_rejection_radius);      
+    S.C = [S.C; kp_new_sorted_out'];
+    S.F = [S.F; kp_new_sorted_out'];
+    S.T = [S.T, T_CW(:) * ones(1,size(kp_new_sorted_out, 2))];
+    setPoints(trackP, S.P);
+    setPoints(trackC, S.C);
     
 end
 
