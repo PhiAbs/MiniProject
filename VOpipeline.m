@@ -8,12 +8,30 @@ assert(exist('path', 'var') ~= 0);
 ground_truth = load([path '/poses/00.txt']);
 ground_truth = ground_truth(:, [end-8 end]);
 last_frame = 4540;
-K = load([path '/00/K.txt']);
+% K = load([path '/00/K.txt']);
+    K = [7.188560000000e+02 0 6.071928000000e+02
+        0 7.188560000000e+02 1.852157000000e+02
+        0 0 1];
 cameraParams = cameraParameters('IntrinsicMatrix',K');
 
 % camera angles
 anglex = K(1,3)/K(1,1);
 angley = K(2,3)/K(2,2);
+
+% parameters
+bidirect_thresh = 0.3; % TODO  0.3: good
+last_bootstrap_frame_index = 2;  %TODO
+baseline_thresh = 0.1;
+maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
+maxNumTrials_Essential = 20000;
+max_allowed_point_dist = 150;  %TODO  100: good 150: good especially for parking
+minQuality_Harris = 0.01;  %TODO  0.1: good
+harris_rejection_radius = 5; %TODO 10: good for kitti
+p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
+p3p_num_iter = 5000;
+BA_iter = 2;
+num_BA_frames = 20;
+reprojection_thresh = 30;  %15: good. 10000: not so good for kitti, good for parking
 
 
 %% Bootstrapping
@@ -40,24 +58,25 @@ confidence = confidence(keep);
 % stem3(kps(:,1),kps(:,2),confidence,'fill'); view(-25,30);
 
 %% estimate Fundamental Matrix and initial pose
-
-
-[F, keep] = estimateFundamentalMatrix(kps,kpl);
-% E2 = K'*F*K;
-% [E, keep] = estimateEssentialMatrix(kps,kpl,cameraParams);
-
+[E, keep] = estimateEssentialMatrix(kps, ...
+    kpl, cameraParams, 'MaxNumTrials', ...
+    maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
 kps = kps(keep,:);
 kpl = kpl(keep,:);
 % subplot(2,1,2)
 % showMatchedFeatures(img0,img1,kps,kpl)
 
-% [R_C_W,t_C_W] = relativeCameraPose(E,cameraParams,kps,kpl)
-[R_W_C,t_W_C] = relativeCameraPose(F,cameraParams,kps,kpl);
-T_CW = [R_W_C',-R_W_C'*t_W_C'];
+[R_W_C,t_W_C] = relativeCameraPose(E,cameraParams,kps,kpl);
+% transform to our system
+R_W_C = R_W_C';
+t_W_C = t_W_C';
+T_WC = [R_W_C,t_W_C];
+
+T_CW = [R_W_C',-R_W_C'*t_W_C];
 
 %% triangulate Points
-
-M = cameraMatrix(cameraParams,R_W_C',-R_W_C'*t_W_C'); % = (K*T_CW)' but not exactly equal
+M = cameraMatrix(cameraParams,R_W_C', t_W_C'); 
+M = (K*T_WC)';
 
 S.P = kpl;
 [S.X, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
@@ -70,11 +89,11 @@ S.P = kpl;
 
 %% continious
 
-keep = all((abs(S.X(:,1:2))<[anglex angley].*S.X(:,3)) & reprojectionErrors < 2 ,2);
+keep = all((abs(S.X(:,1:2))<[anglex angley].*S.X(:,3)) & reprojectionErrors < reprojection_thresh ,2);
 S.X = S.X(keep,:);
 S.P = S.P(keep,:);
 % extract new features in 2nd image
-points = detectHarrisFeatures(img1,'MinQuality',0.1);
+points = detectHarrisFeatures(img1,'MinQuality', minQuality_Harris);
 kpl = points.Location;
 keep = ~ismember(kpl,S.P,'rows');
 S.C = kpl(keep,:);
@@ -92,9 +111,9 @@ for i=2:last_frame
     img = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',i)])));
     % track features into new image
     % initialize KLT trackers for continuous mode
-    trackP = vision.PointTracker('MaxBidirectionalError',0.3);
+    trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
     initialize(trackP, S.P, img_prev);
-    trackC = vision.PointTracker('MaxBidirectionalError',0.3);
+    trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
     initialize(trackC, S.C, img_prev);
     
     [points, keepP] = trackP(img);
@@ -106,8 +125,10 @@ for i=2:last_frame
     S.F = S.F(keepC,:);
     
     [R_WC, t_WC, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams,...
-        'MaxNumTrials',20000);
-    T_CW = [R_WC',-R_WC'*t_WC'];
+        'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
+    R_WC = R_WC';
+    t_WC = t_WC';
+    T_CW = [R_WC',-R_WC'*t_WC];
     nnz(keepP)/length(keepP);
     S.X = S.X(keepP,:);
     S.P = S.P(keepP,:);
@@ -137,7 +158,7 @@ for i=2:last_frame
     % plot3(Xnew(:,1),Xnew(:,2),Xnew(:,3),'*'); view(0,90);
     
     % extract new Keypints
-    points = detectHarrisFeatures(img,'MinQuality',0.1);
+    points = detectHarrisFeatures(img,'MinQuality', minQuality_Harris);
     kpl = points.Location;  %keypoint_latest
     keep = ~ismember(kpl,[S.P; S.C],'rows');
     S.C = [S.C; kpl(keep,:)];
