@@ -11,6 +11,10 @@ last_frame = 4540;
 K = load([path '/00/K.txt']);
 cameraParams = cameraParameters('IntrinsicMatrix',K');
 
+% camera angles
+anglex = K(1,3)/K(1,1);
+angley = K(2,3)/K(2,2);
+
 
 %% Bootstrapping
 
@@ -53,7 +57,7 @@ T_CW = [R_W_C',-R_W_C'*t_W_C'];
 
 %% triangulate Points
 
-M = cameraMatrix(cameraParams,R_W_C',-R_W_C*t_W_C'); % = T_CW' but not exactly equal
+M = cameraMatrix(cameraParams,R_W_C',-R_W_C'*t_W_C'); % = (K*T_CW)' but not exactly equal
 
 S.P = kpl;
 [S.X, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
@@ -66,7 +70,7 @@ S.P = kpl;
 
 %% continious
 
-keep = all((S.X > [-25 -10 0] & S.X < [25 10 100]) & reprojectionErrors<1 ,2);
+keep = all((abs(S.X(:,1:2))<[anglex angley].*S.X(:,3)) & reprojectionErrors < 2 ,2);
 S.X = S.X(keep,:);
 S.P = S.P(keep,:);
 % extract new features in 2nd image
@@ -101,9 +105,10 @@ for i=2:last_frame
     S.T = S.T(:,keepC);
     S.F = S.F(keepC,:);
     
-    [R_W_C, t_W_C, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams);
-    T_CW = [R_W_C',-R_W_C'*t_W_C'];
-    nnz(keepP)/length(keepP)
+    [R_WC, t_WC, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams,...
+        'MaxNumTrials',20000);
+    T_CW = [R_WC',-R_WC'*t_WC'];
+    nnz(keepP)/length(keepP);
     S.X = S.X(keepP,:);
     S.P = S.P(keepP,:);
 %     plot(t_W_C(1),t_W_C(3),'o','linewidth',2)
@@ -112,18 +117,24 @@ for i=2:last_frame
     % triangulate S.C and S.F
     Xnew = []; reprojectionErrors = [];
     for i=1: size(S.C,1)
-        [new, reprojectionError] = triangulate( S.F(i,:), S.C(i,:), reshape( S.T(:,1),3,4)', T_CW');
+        [new, reprojectionError] = triangulate( S.F(i,:), S.C(i,:), (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
         Xnew = [Xnew; new];
         reprojectionErrors = [reprojectionErrors; reprojectionError];
     end
-    % This doesn't work, values wax to big
-    Xnew
-    keep = all((Xnew > [-200 -100 0] & Xnew < [200 100 100]) & reprojectionErrors<10 ,2);
+
+    keep = all((abs(Xnew(:,1:2)-t_WC(1:2))<[anglex angley].*(Xnew(:,3)-t_WC(3))) & reprojectionErrors < 2 ,2);   
+    % plot for debugging and tuning
+    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors<2, ...
+        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC)
+%     pause(2);
+    
     Xnew = Xnew(keep,:);
+    S.X = [S.X; Xnew];
+    S.P = [S.P; S.C(keep,:)];
     S.C = S.C(~keep,:);
     S.T = S.T(:,~keep);
     S.F = S.F(~keep,:);
-    plot3(Xnew(:,1),Xnew(:,2),Xnew(:,3),'*'); view(0,90);
+    % plot3(Xnew(:,1),Xnew(:,2),Xnew(:,3),'*'); view(0,90);
     
     % extract new Keypints
     points = detectHarrisFeatures(img,'MinQuality',0.1);
@@ -136,4 +147,53 @@ for i=2:last_frame
 end
 
 
+
+%% Functions
+
+function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
+
+%     figure('name','11','units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
+    figure(11)
+    set(gcf,'units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
+    % plot upper image with 3D correspondences
+    subplot(3,3,1:6)
+    hold off;
+    imshow(image);
+    hold on;
+    plot(C(~keepReprojection,1),C(~keepReprojection,2),'bs','linewidth',1.5)
+    plot(C(~keepGreater0,1),C(~keepGreater0,2),'cd','linewidth',1.5)
+    plot(C(keepGreater0&keepReprojection,1),C(keepGreater0&keepReprojection,2),...
+        'yo','linewidth',1.5)
+    plot(P(:,1),P(:,2),'r*','linewidth',1.5)
+    legend('ReprojectionError is too big',...
+        'triangulated behind camera',...
+        'newly triangulated',...
+        'old 3D correspondences')
+    title('image with 3D correspondences and new kps')
+    
+    
+    % bar diagram with sizes of different matrices
+    
+    
+    % plot lower left as 2D point cloud
+    subplot(3,3,8)
+    hold on;
+    plot(Xnew(keepGreater0&keepReprojection,1),Xnew(keepGreater0&keepReprojection,3),...
+        'bx','linewidth',1.5);
+    plot(X(:,1),X(:,3),'rx','linewidth',1.5);
+    title('2D Pointcloud')
+    xlabel('x')
+    ylabel('z')
+    
+    
+    % plot Camera Positions
+    subplot(3,3,9)
+    hold on;
+    plot(t_WC(1),t_WC(3),'rx','linewidth',3)
+    title('Camera Position')
+    xlabel('x')
+    ylabel('z')
+    axis([-10 10 0 inf])
+
+end
 
