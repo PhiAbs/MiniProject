@@ -10,7 +10,7 @@ cameraParams = cameraParameters('IntrinsicMatrix',K');
 % not sure about the exact output R_W_C or R_C_W
 
 [R_W_C, t_W_C, inlier_idx] = estimateWorldCameraPose(double(P'),double(X'),...
-    cameraParams, 'MaxNumTrials', 5000, 'MaxReprojectionError', 1);
+    cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh);
 
 T_W_C = [R_W_C', t_W_C'; 0 0 0 1];
 P_inlier = P(:,inlier_idx);

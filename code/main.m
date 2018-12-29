@@ -1,19 +1,22 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 2; % 0: KITTI, 1: Malaga, 2: parking
 
-bidirect_thresh = 0.3;
-last_bootstrap_frame_index = 10;
+bidirect_thresh = 0.3; % TODO  0.3: good
+last_bootstrap_frame_index = 2;  %TODO
 baseline_thresh = 0.1;
-max_allowed_point_dist = 100;
-harris_rejection_radius = 10;
-harris_num_image_splits = 5;
-p3p_pixel_thresh = 1;
+maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
+maxNumTrials_Essential = 20000;
+max_allowed_point_dist = 150;  %TODO  100: good 150: good especially for parking
+minQuality_Harris = 0.01;  %TODO  0.1: good
+harris_rejection_radius = 5; %TODO 10: good for kitti
+p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 5000;
 BA_iter = 2;
 num_BA_frames = 20;
-reprojection_thresh = 15;
+reprojection_thresh = 30;  %15: good. 10000: not so good for kitti, good for parking
 plot_stuff = false;
+disp_stuff = false;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -55,7 +58,7 @@ addpath('essentialMatrix');
 addpath('p3p');
 addpath('bundleAdjustment');
 
-%% Bootstrap
+% Bootstrap
 
 % store first image
 if ds == 1
@@ -64,12 +67,14 @@ else
     image = uint8(loadImage(ds, 1, path));
 end
 
-points = detectHarrisFeatures(image, 'MinQuality',0.01);
+points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
 
 keypoints_start = points.Location;
 
-disp('Start Bootstrapping');
-disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
+if disp_stuff
+    disp('Start Bootstrapping');
+    disp(['extracted Harris Keypoints: ', num2str(points.Count)]);
+end
 
 % add pointtracker object for KLT
 pointTracker = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
@@ -94,7 +99,8 @@ for i = 1:last_bootstrap_frame_index
     % Estimate the essential matrix E 
     cameraParams = cameraParameters('IntrinsicMatrix',K');
     [E, in_essential] = estimateEssentialMatrix(keypoints_start, ...
-        keypoints_latest, cameraParams, 'MaxNumTrials', 2000, 'MaxDistance', 0.1);
+        keypoints_latest, cameraParams, 'MaxNumTrials', ...
+        maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
 
     [Rots,u3] = decomposeEssentialMatrix(E);
     
@@ -115,8 +121,10 @@ for i = 1:last_bootstrap_frame_index
     keypoints_start = keypoints_start(keep_reprojected, :);
     keypoints_latest = keypoints_latest(keep_reprojected, :);
     
-    disp([' number of removed keypoints: ' num2str(sum(~keep_reprojected))]);
-
+    if disp_stuff
+        disp([' number of removed keypoints: ' num2str(sum(~keep_reprojected))]);
+    end
+    
     % only keep valid points in point tracker
     setPoints(pointTracker, keypoints_latest);
     
@@ -126,18 +134,12 @@ for i = 1:last_bootstrap_frame_index
             Points3D, R_C2_W, t_C2_W);
     end
     
-    disp(['Iteration ', num2str(i)]);
-    disp(['Keypoints in Image nr', num2str(i+1), ': ', ...
-        num2str(length(keypoints_start))]);
-
-    % check if camera moved far enough to finish bootstrapping
-    avg_depth = mean(Points3D(3,:));
-    baseline_dist = norm(t_C2_W);
+    if disp_stuff
+        disp(['Iteration ', num2str(i)]);
+        disp(['Keypoints in Image nr', num2str(i+1), ': ', ...
+            num2str(length(keypoints_start))]);
+    end
     
-    disp(['Ratio baseline_dist / avg_depth: ', ...
-        num2str((baseline_dist / avg_depth)), ...
-        ' must be > ', num2str(baseline_thresh)]);
-
     % Plot reprojected Points
     if plot_stuff
         P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
@@ -154,12 +156,6 @@ for i = 1:last_bootstrap_frame_index
         pause(0.01);
     end
     
-    if i == 2
-        % leave bootstrapping if keyframes are enough far apart
-        last_bootstrap_frame_index = i;
-        break;
-    end
-    
     image_prev = image;
 end
 
@@ -172,7 +168,9 @@ p1 = [keypoints_start'; ones(1, length(keypoints_start))];
 pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
 
 cameraParams = cameraParameters('IntrinsicMatrix',K');
-[E, in_essential] = estimateEssentialMatrix(keypoints_start, keypoints_latest, cameraParams);
+[E, in_essential] = estimateEssentialMatrix(keypoints_start, ...
+    keypoints_latest, cameraParams, 'MaxNumTrials', ...
+        maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
 
 [Rots,u3] = decomposeEssentialMatrix(E);
 
@@ -200,15 +198,17 @@ if plot_stuff
     plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
 end
 
-disp(['Iteration ', num2str(i)]);
-disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
+if disp_stuff
+    disp(['Iteration ', num2str(i)]);
+    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
+end
 
 % Extract Harris Features from last bootstrapping image
 % kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
-points = detectHarrisFeatures(image);
+points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
 kp_new_latest_frame = points.Location;
 
-%%
+%
 
 % remove points that lie behind the first camera or that are far away
 within_min = Points3D(3, :) > 0;
@@ -275,7 +275,10 @@ for i = range
     % Makes sure that plots refresh.    
     pause(0.01);
     
-    disp('run KLT on S.P');
+    if disp_stuff
+        disp('run KLT on S.P');
+    end
+    
     tic
 %     do KLT tracking for keypoints
     [points_KLT_P, keep_P] = tracker_P(image);
@@ -295,7 +298,10 @@ for i = range
     S.P_BA(keep_P_BA, end, 2) = S.P(2,:);
     
 %     Estimate new camera pose using p3p
-    disp('run p3p with Ransac on S.P and S.X');
+    if disp_stuff
+        disp('run p3p with Ransac on S.P and S.X');
+    end
+    
     tic
     [T, S.P, S.X, best_inlier_mask] = ...
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
@@ -311,7 +317,10 @@ for i = range
     S.P_BA(~keep_P_BA, end, 2) = 0;
     
 %     Track 
-    disp('run KLT on S.C');
+    if disp_stuff
+        disp('run KLT on S.C');
+    end
+    
     tic
     [points_KLT_C, keep_C] = tracker_C(image);
     toc;
@@ -324,7 +333,10 @@ for i = range
     S.Frames = S.Frames(keep_C);  
     
     % Triangulate new points
-    disp('try to triangulate S.C and S.F');
+    if disp_stuff
+        disp('try to triangulate S.C and S.F');
+    end
+    
     tic
     [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
@@ -334,17 +346,24 @@ for i = range
         % delete points that are far away or that lie behind the camera
         [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, K, ...
             X_new, keep_triang, logical(keep_reprojected), max_allowed_point_dist);
-        disp(['points with large reprojection error (sorted out): ', ...
-            num2str(sum(~keep_reprojected))]);
+        if disp_stuff
+            disp(['points with large reprojection error (sorted out): ', ...
+                num2str(sum(~keep_reprojected))]);
+        end
     end
         
     % extract new keypoints
-    disp('extract Keypoint')
+    if disp_stuff
+        disp('extract Keypoint');
+    end
+    
     tic
-    points = detectHarrisFeatures(image);
+    points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
     kp_new_latest_frame = points.Location;
     toc
-    disp('check if extracted Keypoints are new')
+    if disp_stuff
+        disp('check if extracted Keypoints are new')
+    end
     tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
         [S.P, S.C], harris_rejection_radius);  
@@ -397,9 +416,11 @@ for i = range
 %         BA_iter = BA_iter + 1;
 %     end
 
-    disp(['Number of 3D points:' num2str(size(S.X,2))]);
-    disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
-    disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+    if disp_stuff
+        disp(['Number of 3D points:' num2str(size(S.X,2))]);
+        disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
+        disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+    end
     
     if plot_stuff
         disp('plot continuous')
