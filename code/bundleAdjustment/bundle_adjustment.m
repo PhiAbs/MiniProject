@@ -1,5 +1,5 @@
 function [X_BA_refined, S_T, X_refined, T_refined, cameraPoses_all] = ...
-    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K)
+    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K, max_iterations)
 % Do bundle adjustment over a sliding window
 
 iterator = 1;
@@ -22,20 +22,22 @@ for BA_i = 1:size(S.P_BA, 1)
 end
 
 % store the num_BA_frames last camera poses and IDs in a new table (used
-% for bundle adjustment)
+% for bundle adjustment). Invert the rotation matrix, since our convention
+% is different than the one from matlab!
 cameraPoses = table;
 cameraPoses.ViewId(1:num_BA_frames) = ...
     cameraPoses_all.ViewId(end+1-num_BA_frames:end);
 for j = 1:num_BA_frames
     cameraPoses.Orientation{j} = ...
-        cameraPoses_all.Orientation{end+j-num_BA_frames};
+        cameraPoses_all.Orientation{end+j-num_BA_frames}';
     cameraPoses.Location{j} = ...
         cameraPoses_all.Location{end+j-num_BA_frames};
 end
 
-% do bundle adjustment
+% Invert K since matlab has another convention than we do
 cameraParams = cameraParameters('IntrinsicMatrix', K'); 
-fixed_views = cameraPoses.ViewId(1);
+
+fixed_views = cameraPoses.ViewId(1):cameraPoses.ViewId(4);
 
 % reprojection_thresh = 10; 
 % reprojectionErrors = reprojection_thresh + 1;
@@ -45,7 +47,8 @@ X_tracked_long_enough = S.X_BA(tracked_long_enough, :);
 % while max(reprojectionErrors) > reprojection_thresh
     [refinedPoints3D, refinedPoses, reprojectionErrors] = ...
         bundleAdjustment(X_tracked_long_enough, pointTracks, ...
-        cameraPoses, cameraParams, 'FixedViewId', fixed_views, 'PointsUndistorted', true);
+        cameraPoses, cameraParams, 'FixedViewId', fixed_views, ...
+        'PointsUndistorted', true, 'MaxIterations', max_iterations);
     
     % find all points with large reprojection errors and rerun BA without
     % these points
@@ -72,13 +75,13 @@ X_BA_refined = S.X_BA;
 X_refined = X_BA_refined(logical(keep_P_BA), :)';
 
 % store the latest refined camera pose
-T_refined = [refinedPoses.Orientation{num_BA_frames}, ...
+T_refined = [refinedPoses.Orientation{num_BA_frames}', ...
     refinedPoses.Location{num_BA_frames}'; [0,0,0,1]];
 
 % store the refined camera poses in the table containing all camera poses
 for j = 1:num_BA_frames
     cameraPoses_all.Orientation{end+j-num_BA_frames} = ...
-        refinedPoses.Orientation{j};
+        refinedPoses.Orientation{j}';
     cameraPoses_all.Location{end+j-num_BA_frames} = ...
         refinedPoses.Location{j};
 end
@@ -87,7 +90,7 @@ end
 S_T = S.T;
 for k = 1:num_BA_frames
     idx = find(S.Frames == refinedPoses.ViewId(k));
-    T_new = [refinedPoses.Orientation{k}, ...
+    T_new = [refinedPoses.Orientation{k}', ...
         refinedPoses.Location{k}'; [0,0,0,1]];
     if isempty(idx) == false
         for iter = 1:size(idx, 1)

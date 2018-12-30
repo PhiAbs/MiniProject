@@ -1,22 +1,46 @@
 %% Setup
 clear; close all; clc;
-ds = 2; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
-bidirect_thresh = 0.3; % TODO  0.3: good
+% good params for kitti and malaga
+bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
 last_bootstrap_frame_index = 2;  %TODO
-baseline_thresh = 0.1;
+baseline_thresh = 0.1; % larger number means less features (but better triangulation)
 maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-max_allowed_point_dist = 150;  %TODO  100: good 150: good especially for parking
-minQuality_Harris = 0.01;  %TODO  0.1: good
+max_allowed_point_dist = 80;  %TODO  100: good 150: good especially for parking
+minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
 harris_rejection_radius = 5; %TODO 10: good for kitti
-p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
+p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
 p3p_num_iter = 5000;
 BA_iter = 2;
 num_BA_frames = 20;
-reprojection_thresh = 30;  %15: good. 10000: not so good for kitti, good for parking
+max_iter_BA = 50;
+reprojection_thresh = 2;  %15: good. 10000: not so good for kitti, good for parking
 plot_stuff = false;
 disp_stuff = false;
+enable_bootstrap = true;
+
+% ok for parking
+% bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
+% last_bootstrap_frame_index = 2;  %TODO
+% baseline_thresh = 0.1; % 0.05: good. larger number means less features (but better triangulation)
+% maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
+% maxNumTrials_Essential = 20000;
+% max_allowed_point_dist = 120;  %TODO  100: good 150: good especially for parking
+% minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
+% harris_rejection_radius = 1; %TODO 10: good for kitti
+% p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
+% p3p_num_iter = 10000;
+% BA_iter = 2;
+% num_BA_frames = 20;
+% max_iter_BA = 100;
+% reprojection_thresh = 2;  %15: good
+% plot_stuff = false;
+% disp_stuff = false;
+% enable_bootstrap = true;
+
+absolute_minimum = 1000;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -141,20 +165,20 @@ for i = 1:last_bootstrap_frame_index
     end
     
     % Plot reprojected Points
-    if plot_stuff
-        P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
-        error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
-        fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
-        figure(83)
-        clf;
-        imshow(image)
-        hold on;
-        plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
-        hold on;
-        plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
-        hold on;
-        pause(0.01);
-    end
+%     if plot_stuff
+%         P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
+%         error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
+%         fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
+%         figure(83)
+%         clf;
+%         imshow(image)
+%         hold on;
+%         plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
+%         hold on;
+%         plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
+%         hold on;
+%         pause(0.01);
+%     end
     
     image_prev = image;
 end
@@ -195,12 +219,14 @@ keypoints_latest = keypoints_latest(keep_reprojected, :);
 
 % Plot stuff
 if plot_stuff
-    plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, Points3D, R_C2_W, t_C2_W);
+    plotBootstrap(image_prev, image, keypoints_start, keypoints_latest, ...
+        Points3D, R_C2_W, t_C2_W);
 end
 
 if disp_stuff
     disp(['Iteration ', num2str(i)]);
-    disp(['Keypoints in Image nr', num2str(i+1), ': ', num2str(length(keypoints_start))]);
+    disp(['Keypoints in Image nr', num2str(i+1), ': ', ...
+        num2str(length(keypoints_start))]);
 end
 
 % Extract Harris Features from last bootstrapping image
@@ -238,6 +264,7 @@ cameraPoses_all = table;
 cameraPoses_all.ViewId(1) = uint32(last_bootstrap_frame_index);
 cameraPoses_all.Orientation{1} = T(1:3, 1:3);
 cameraPoses_all.Location{1} = T(1:3, end)';
+
 S.P_BA(:, num_BA_frames, 1) = S.P(1,:)';
 S.P_BA(:, num_BA_frames, 2) = S.P(2,:)';
 S.X_BA = S.X'; 
@@ -279,10 +306,10 @@ for i = range
         disp('run KLT on S.P');
     end
     
-    tic
+    % tic
 %     do KLT tracking for keypoints
     [points_KLT_P, keep_P] = tracker_P(image);
-    toc
+    % toc
     
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
@@ -302,10 +329,15 @@ for i = range
         disp('run p3p with Ransac on S.P and S.X');
     end
     
-    tic
+    % tic
     [T, S.P, S.X, best_inlier_mask] = ...
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
-    toc
+    % toc
+    
+    disp(['number of landmakrs tracked from previous frame: ' num2str(size(S.X, 2))]);
+    if size(S.X, 2) < absolute_minimum
+        absolute_minimum = size(S.X, 2);
+    end
     
     % update data for bootstrap: update only the points that can still be
     % tracked!
@@ -321,9 +353,9 @@ for i = range
         disp('run KLT on S.C');
     end
     
-    tic
+    % tic
     [points_KLT_C, keep_C] = tracker_C(image);
-    toc;
+    % toc;
     
     Frames_old = S.Frames;
     
@@ -337,10 +369,10 @@ for i = range
         disp('try to triangulate S.C and S.F');
     end
     
-    tic
+    % tic
     [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
-    toc
+    % toc
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
@@ -357,17 +389,17 @@ for i = range
         disp('extract Keypoint');
     end
     
-    tic
+    % tic
     points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
     kp_new_latest_frame = points.Location;
-    toc
+    % toc
     if disp_stuff
         disp('check if extracted Keypoints are new')
     end
-    tic
+    % tic
     kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
         [S.P, S.C], harris_rejection_radius);  
-    toc
+    % toc
     
     S.C = [S.C, kp_new_sorted_out];
     S.F = [S.F, kp_new_sorted_out];
@@ -385,49 +417,46 @@ for i = range
     cameraPoses_new.Location{1} = T(1:3, end)';
     cameraPoses_all = [cameraPoses_all; cameraPoses_new];
     
-%     % bundle adjustment
-%     if BA_iter == num_BA_frames
-%         % delete all rows in the BA matrices for which the corresponding
-%         % landmarks can no longer be tracked
-%         % TODO: here we assume that a zero in the x matrix means that the
-%         % corresponding point is not tracked. can we set all non-valid
-%         % points to inf or something like that?
+    % bundle adjustment
+    if BA_iter == num_BA_frames && enable_bootstrap
+        % delete all rows in the BA matrices for which the corresponding
+        % landmarks can no longer be tracked
 %         disp('bundle adjustment');
-%         tic
-%         untracked_landmark_idx = find(sum(S.P_BA(:,:,1), 2) == 0);
-%         S.P_BA(untracked_landmark_idx, :, :) = [];
-%         S.X_BA(untracked_landmark_idx, :) = [];
-%         keep_P_BA(untracked_landmark_idx) = [];
-%         
-%         [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
-%             bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K);
-%         toc
-%         
-%         if plot_stuff  
-    %         disp('plot bundle adjustment')
-    %         tic
-    %         plotBundleAdjustment(cameraPoses_all)
-    %         toc
-%         end
-%         
-% %         BA_iter = 2; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
-%         
-%     else
-%         BA_iter = BA_iter + 1;
-%     end
-
-    if disp_stuff
-        disp(['Number of 3D points:' num2str(size(S.X,2))]);
-        disp(['Number of new keypoints:' num2str(size(kp_new_sorted_out,2))]);
-        disp(['Number of candidate keypoints:' num2str(size(S.C, 2))]);
+        % tic
+        untracked_landmark_idx = find(sum(S.P_BA(:,:,1), 2) == 0);
+        S.P_BA(untracked_landmark_idx, :, :) = [];
+        S.X_BA(untracked_landmark_idx, :) = [];
+        keep_P_BA(untracked_landmark_idx) = [];
+        
+        [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
+            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K, max_iter_BA);
+        % toc
+        
+        if plot_stuff  
+            disp('plot bundle adjustment')
+            % tic
+            plotBundleAdjustment(cameraPoses_all)
+            % toc
+        end
+        
+%         BA_iter = 11; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
+        
+    else
+        BA_iter = BA_iter + 1;
     end
+
+%     if disp_stuff
+%         disp(['Number of 3D points: ' num2str(size(S.X,2))]);
+%         disp(['Number of new keypoints: ' num2str(size(kp_new_sorted_out,2))]);
+%         disp(['Number of candidate keypoints: ' num2str(size(S.C, 2))]);
+%     end
     
     if plot_stuff
         disp('plot continuous')
-        tic
+        % tic
     %     plotContinuous(image, S.X, S.P, S.C, T);
         plotContinuous(image, X_new, S.X, S.P, S.C, T, K);
-        toc
+        % toc
 
         disp(['Frames still in S.C' num2str(unique(S.Frames))]);
         plotBarDiagram(S.Frames,Frames_old);
