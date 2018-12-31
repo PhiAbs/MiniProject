@@ -1,5 +1,5 @@
 function [X_BA_refined, S_T, X_refined, T_refined, cameraPoses_all] = ...
-    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K, max_iterations)
+    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K, max_iterations, num_fixed_frames)
 % Do bundle adjustment over a sliding window
 
 iterator = 1;
@@ -37,7 +37,7 @@ end
 % Invert K since matlab has another convention than we do
 cameraParams = cameraParameters('IntrinsicMatrix', K'); 
 
-fixed_views = cameraPoses.ViewId(1):cameraPoses.ViewId(4);
+fixed_views = cameraPoses.ViewId(1):cameraPoses.ViewId(num_fixed_frames);
 
 % reprojection_thresh = 10; 
 % reprojectionErrors = reprojection_thresh + 1;

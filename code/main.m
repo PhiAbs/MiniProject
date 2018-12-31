@@ -2,45 +2,54 @@
 clear; close all; clc;
 ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
-% good params for kitti and malaga
-bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
-last_bootstrap_frame_index = 2;  %TODO
-baseline_thresh = 0.1; % larger number means less features (but better triangulation)
-maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
-maxNumTrials_Essential = 20000;
-max_allowed_point_dist = 80;  %TODO  100: good 150: good especially for parking
-minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
-harris_rejection_radius = 5; %TODO 10: good for kitti
-p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
-p3p_num_iter = 5000;
-BA_iter = 2;
-num_BA_frames = 20;
-max_iter_BA = 50;
-reprojection_thresh = 2;  %15: good. 10000: not so good for kitti, good for parking
-plot_stuff = false;
-disp_stuff = false;
-enable_bootstrap = true;
+if ds == 0 || 1
+    % good params for kitti and malaga
+    bidirect_thresh = 0.3; % 0.3: good. larger number means more features (but worse quality)
+    last_bootstrap_frame_index = 2; 
+    baseline_thresh = 0.1; % larger number means less features (but better triangulation)
+    maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
+    maxNumTrials_Essential = 20000;
+    max_allowed_point_dist = 80;  %100: good 150: good especially for parking
+    harris_num_image_splits = 5;
+    minQuality_Harris = 0.0001;  %0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 20; % larger number means less features
+    harris_rejection_radius = 20; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+    p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
+    p3p_num_iter = 5000;
+    BA_iter = 2;
+    num_BA_frames = 20;
+    max_iter_BA = 50;
+    num_fixed_frames_BA = 3;
+    reprojection_thresh = 2;  %15: good. 10000: not so good for kitti, good for parking
+    plot_stuff = false;
+    disp_stuff = true;
+    enable_bootstrap = true;
+end
 
-% ok for parking
-% bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
-% last_bootstrap_frame_index = 2;  %TODO
-% baseline_thresh = 0.1; % 0.05: good. larger number means less features (but better triangulation)
-% maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
-% maxNumTrials_Essential = 20000;
-% max_allowed_point_dist = 120;  %TODO  100: good 150: good especially for parking
-% minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
-% harris_rejection_radius = 1; %TODO 10: good for kitti
-% p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
-% p3p_num_iter = 10000;
-% BA_iter = 2;
-% num_BA_frames = 20;
-% max_iter_BA = 100;
-% reprojection_thresh = 2;  %15: good
-% plot_stuff = false;
-% disp_stuff = false;
-% enable_bootstrap = true;
+if ds == 2
+    ok for parking
+    bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
+    last_bootstrap_frame_index = 2;  %TODO
+    baseline_thresh = 0.1; % 0.05: good. larger number means less features (but better triangulation)
+    maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
+    maxNumTrials_Essential = 20000;
+    max_allowed_point_dist = 120;  %TODO  100: good 150: good especially for parking
+    harris_num_image_splits = 5;
+    minQuality_Harris = 0.001;  %TODO  0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 10;
+    harris_rejection_radius = 10; %TODO 10: good for kitti
+    p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
+    p3p_num_iter = 10000;
+    BA_iter = 2;
+    num_BA_frames = 20;
+    max_iter_BA = 100;
+    num_fixed_frames_BA = 3;
+    reprojection_thresh = 2;  %15: good
+    plot_stuff = false;
+    disp_stuff = false;
+    enable_bootstrap = true;
+end
 
-absolute_minimum = 1000;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -82,7 +91,7 @@ addpath('essentialMatrix');
 addpath('p3p');
 addpath('bundleAdjustment');
 
-% Bootstrap
+%% Bootstrap
 
 % store first image
 if ds == 1
@@ -91,7 +100,9 @@ else
     image = uint8(loadImage(ds, 1, path));
 end
 
-points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+% points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+points = harris_sector_wise(harris_num_image_splits, ...
+    minQuality_Harris, nonmax_suppression_radius, image);
 
 keypoints_start = points.Location;
 
@@ -142,6 +153,7 @@ for i = 1:last_bootstrap_frame_index
     % remove points that have a large reprojection error
     keep_reprojected = (reprojectionErrors < reprojection_thresh);
     Points3D = Points3D(:, keep_reprojected);
+    in_essential = in_essential(keep_reprojected);
     keypoints_start = keypoints_start(keep_reprojected, :);
     keypoints_latest = keypoints_latest(keep_reprojected, :);
     
@@ -231,7 +243,10 @@ end
 
 % Extract Harris Features from last bootstrapping image
 % kp_new_latest_frame = extractHarrisKeypoints(image, num_keypoints);
-points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+% points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+points = harris_sector_wise(harris_num_image_splits, ...
+    minQuality_Harris, nonmax_suppression_radius, image);
+
 kp_new_latest_frame = points.Location;
 
 %
@@ -334,11 +349,6 @@ for i = range
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     % toc
     
-    disp(['number of landmakrs tracked from previous frame: ' num2str(size(S.X, 2))]);
-    if size(S.X, 2) < absolute_minimum
-        absolute_minimum = size(S.X, 2);
-    end
-    
     % update data for bootstrap: update only the points that can still be
     % tracked!
     keep_Index = find(keep_P_BA);
@@ -390,7 +400,10 @@ for i = range
     end
     
     % tic
-    points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+%     points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
+    points = harris_sector_wise(harris_num_image_splits, ...
+        minQuality_Harris, nonmax_suppression_radius, image);
+
     kp_new_latest_frame = points.Location;
     % toc
     if disp_stuff
@@ -429,7 +442,8 @@ for i = range
         keep_P_BA(untracked_landmark_idx) = [];
         
         [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
-            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, keep_P_BA, K, max_iter_BA);
+            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, ...
+            keep_P_BA, K, max_iter_BA, num_fixed_frames_BA);
         % toc
         
         if plot_stuff  
