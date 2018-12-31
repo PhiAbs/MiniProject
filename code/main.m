@@ -1,6 +1,6 @@
 %% Setup
 clear; close all; clc;
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 1; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0 || 1
     % good params for kitti and malaga
@@ -11,15 +11,16 @@ if ds == 0 || 1
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
     harris_num_image_splits = 5;
-    minQuality_Harris = 0.0001;  %0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 20; % larger number means less features
-    harris_rejection_radius = 20; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+    minQuality_Harris = 0.001;  %0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 10; % larger number means less features
+    harris_rejection_radius = 10; %TODO: make it same as nonmax suppression radius? 10: good for kitti
     p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
     p3p_num_iter = 5000;
     BA_iter = 2;
     num_BA_frames = 20;
-    max_iter_BA = 50;
+    max_iter_BA = 100;
     num_fixed_frames_BA = 3;
+    absoluteTolerance_BA = 0.001;
     reprojection_thresh = 2;  %15: good. 10000: not so good for kitti, good for parking
     plot_stuff = false;
     disp_stuff = true;
@@ -27,7 +28,7 @@ if ds == 0 || 1
 end
 
 if ds == 2
-    ok for parking
+%     ok for parking
     bidirect_thresh = 0.3; % TODO  0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2;  %TODO
     baseline_thresh = 0.1; % 0.05: good. larger number means less features (but better triangulation)
@@ -39,11 +40,12 @@ if ds == 2
     nonmax_suppression_radius = 10;
     harris_rejection_radius = 10; %TODO 10: good for kitti
     p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
-    p3p_num_iter = 10000;
+    p3p_num_iter = 5000;
     BA_iter = 2;
     num_BA_frames = 20;
     max_iter_BA = 100;
     num_fixed_frames_BA = 3;
+    absoluteTolerance_BA = 0.001;
     reprojection_thresh = 2;  %15: good
     plot_stuff = false;
     disp_stuff = false;
@@ -84,6 +86,10 @@ elseif ds == 2
 else
     assert(false);
 end
+
+% camera angles
+anglex = K(1,3)/K(1,1);
+angley = K(2,3)/K(2,2);
 
 % add paths to subfolders
 addpath('plot');
@@ -252,10 +258,15 @@ kp_new_latest_frame = points.Location;
 %
 
 % remove points that lie behind the first camera or that are far away
-within_min = Points3D(3, :) > 0;
-within_max = Points3D(3,:) < max_allowed_point_dist;
-Points3D = Points3D(:, (within_min & within_max));
-keypoints_latest = keypoints_latest((within_min & within_max), :);
+T_C_W = inv(T);
+Points3D_cam = T_C_W(1:3,:) * Points3D;
+within_min = Points3D_cam(3, :) > 0;
+within_max = Points3D_cam(3,:) < max_allowed_point_dist;
+keep_camera_angle = (abs(Points3D_cam(1:2, :))<[anglex; angley].*(Points3D_cam(3, :)));
+Points3D = Points3D(:, (within_min & within_max & ...
+    keep_camera_angle(1,:) & keep_camera_angle(2,:)));
+keypoints_latest = keypoints_latest((within_min & within_max & ...
+    keep_camera_angle(1,:) & keep_camera_angle(2,:)), :);
 
 % new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
@@ -386,8 +397,9 @@ for i = range
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
-        [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, K, ...
-            X_new, keep_triang, logical(keep_reprojected), max_allowed_point_dist);
+        [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
+            X_new, keep_triang, logical(keep_reprojected), ...
+            max_allowed_point_dist, anglex, angley);
         if disp_stuff
             disp(['points with large reprojection error (sorted out): ', ...
                 num2str(sum(~keep_reprojected))]);
@@ -443,7 +455,7 @@ for i = range
         
         [S.X_BA, S.T, S.X, T, cameraPoses_all] = ...
             bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, ...
-            keep_P_BA, K, max_iter_BA, num_fixed_frames_BA);
+            keep_P_BA, K, max_iter_BA, num_fixed_frames_BA, absoluteTolerance_BA);
         % toc
         
         if plot_stuff  
@@ -459,17 +471,17 @@ for i = range
         BA_iter = BA_iter + 1;
     end
 
-%     if disp_stuff
-%         disp(['Number of 3D points: ' num2str(size(S.X,2))]);
-%         disp(['Number of new keypoints: ' num2str(size(kp_new_sorted_out,2))]);
-%         disp(['Number of candidate keypoints: ' num2str(size(S.C, 2))]);
-%     end
+    if disp_stuff
+        disp(['Number of 3D points: ' num2str(size(S.X,2))]);
+        disp(['Number of new keypoints: ' num2str(size(kp_new_sorted_out,2))]);
+        disp(['Number of candidate keypoints: ' num2str(size(S.C, 2))]);
+    end
     
     if plot_stuff
         disp('plot continuous')
         % tic
-    %     plotContinuous(image, S.X, S.P, S.C, T);
         plotContinuous(image, X_new, S.X, S.P, S.C, T, K);
+%         plotall(image, S.X, S.P, X_new, S.C, keep_P_BA, keep_P_BA, T)
         % toc
 
         disp(['Frames still in S.C' num2str(unique(S.Frames))]);

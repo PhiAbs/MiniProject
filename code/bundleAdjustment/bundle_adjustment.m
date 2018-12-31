@@ -1,5 +1,6 @@
 function [X_BA_refined, S_T, X_refined, T_refined, cameraPoses_all] = ...
-    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, K, max_iterations, num_fixed_frames)
+    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, ...
+    K, max_iterations, num_fixed_frames, absoluteTolerance_BA)
 % Do bundle adjustment over a sliding window
 
 iterator = 1;
@@ -39,33 +40,31 @@ cameraParams = cameraParameters('IntrinsicMatrix', K');
 
 fixed_views = cameraPoses.ViewId(1):cameraPoses.ViewId(num_fixed_frames);
 
-% reprojection_thresh = 10; 
-% reprojectionErrors = reprojection_thresh + 1;
 X_tracked_long_enough = S.X_BA(tracked_long_enough, :);
-% points_well_reprojected = true(size(X_tracked_long_enough, 1), 1);
 
 % while max(reprojectionErrors) > reprojection_thresh
     [refinedPoints3D, refinedPoses, reprojectionErrors] = ...
         bundleAdjustment(X_tracked_long_enough, pointTracks, ...
         cameraPoses, cameraParams, 'FixedViewId', fixed_views, ...
-        'PointsUndistorted', true, 'MaxIterations', max_iterations);
-    
-    % find all points with large reprojection errors and rerun BA without
-    % these points
-%     max(reprojectionErrors)
-%     indexes = find(points_well_reprojected);
-%     points_well_reprojected_iter = (reprojectionErrors < reprojection_thresh);
-%     points_well_reprojected(indexes(~points_well_reprojected_iter)) = false;
-%     X_tracked_long_enough = X_tracked_long_enough(points_well_reprojected_iter, :);
-%     pointTracks = pointTracks(points_well_reprojected_iter);
+        'PointsUndistorted', true, 'MaxIterations', max_iterations, ...
+        'AbsoluteTolerance', absoluteTolerance_BA);
+
+% orientation_change_sum = zeros(3,3);
+% location_change_sum = zeros(1,3);
+% for i = 1:num_BA_frames
+%     orientation_change_sum = orientation_change_sum + ...
+%         refinedPoses.Orientation{i} - cameraPoses.Orientation{i};
+%     location_change_sum = location_change_sum + refinedPoses.Location{i} ...
+%         - cameraPoses.Location{i};
 % end
+% 
+% disp(['max reprojection error after BA: ' num2str(max(reprojectionErrors))]);
+% disp('BA change in orientation of all matrices combined')
+% disp(num2str(orientation_change_sum));
+% disp('BA change in location of all matrices combined')
+% disp(num2str(location_change_sum));
 
-% update all points with a small reprojection error
-% index = find(tracked_long_enough);
-% index = index(points_well_reprojected);
-% X_BA_refined = S.X_BA;
-% X_BA_refined(index, :) = refinedPoints3D;
-
+    
 % % update all 3D points that were refined
 S.X_BA(tracked_long_enough, :) = refinedPoints3D;
 X_BA_refined = S.X_BA;

@@ -1,6 +1,6 @@
 function plotContinuous(img_latest, X_new, X, P, C, T_newest, K)
     
-% show triangulated points in top-down-2D-plot
+% show triangulated points
     figure(21);
     if isempty(X_new) == 0
         figure(21);
@@ -12,7 +12,20 @@ function plotContinuous(img_latest, X_new, X, P, C, T_newest, K)
         xlabel('x');
         ylabel('y');
         zlabel('z');
+        title('newly triangulated points')
     end
+    
+    % show triangulated points
+    figure(22);
+    clf;
+    plot3(X(1,:), X(2,:), X(3,:), 'rx');
+    hold on;
+    grid on;
+    axis equal;
+    xlabel('x');
+    ylabel('y');
+    zlabel('z');
+    title('all triangulated points')
 
     % show coordinate system of the newest camera
     center_cam = T_newest(1:3,4);
