@@ -6,6 +6,8 @@ function  [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
 % sort out all points with a too large reprojection error
 C_keep_triang = S.C(:, keep_triang);
 C_keep_reprojected = C_keep_triang(:, keep_reprojected);
+C_trace_keep_triang = S.C_trace_tracker(keep_triang, :, :);
+C_trace_keep_reprojected = C_trace_keep_triang(keep_reprojected, :, :);
 X_new = X_new(:, keep_reprojected);
 
 T_C_W = inv(T);
@@ -21,18 +23,22 @@ X_new = X_new(:, (~points_far_away & ~points_behind_cam & ...
 
 C_valid = C_keep_reprojected(:, (~points_far_away & ~points_behind_cam & ...
     keep_camera_angle(1,:) & keep_camera_angle(2,:)));
+C_trace_valid = C_trace_keep_reprojected((~points_far_away & ~points_behind_cam & ...
+    keep_camera_angle(1,:) & keep_camera_angle(2,:)), :, :);
 
 S.P = [S.P, C_valid];
 S.X = [S.X, X_new];
 
 % update data for bootstrap
 keep_P_BA = [keep_P_BA; ones(size(X_new, 2), 1)];
-S.P_BA(end+1:end+size(X_new, 2), end, :) = C_valid';
+% S.P_BA(end+1:end+size(X_new, 2), end, :) = C_valid';
+S.P_BA(end+1:end+size(X_new, 2), :, :) = C_trace_valid;
 S.X_BA = [S.X_BA; X_new'];
 
 S.C = S.C(:, ~keep_triang);
 S.T = S.T(:, ~keep_triang);
 S.F = S.F(:, ~keep_triang);
 S.Frames = S.Frames(~keep_triang);
+S.C_trace_tracker = S.C_trace_tracker(~keep_triang, :, :);
 end
 
