@@ -5,15 +5,15 @@ ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 if ds == 0 || 1
     % good params for kitti and malaga
     num_first_image = 1; % nr 1 would refer to the first image in the folder
-    bidirect_thresh = 0.3; % 0.3: good. larger number means more features (but worse quality)
+    bidirect_thresh = 1; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
-    baseline_thresh = 0.01; % larger number means less features (but better triangulation)
+    baseline_thresh = 0.02; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
     harris_num_image_splits = 1;
-    minQuality_Harris = 0.0000001;  %0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 20; % larger number means less features
+    minQuality_Harris = 0.1;  %0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 15; % larger number means less features
     harris_rejection_radius = 20; %TODO: make it same as nonmax suppression radius? 10: good for kitti
     p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
     p3p_num_iter = 10000;
@@ -22,8 +22,9 @@ if ds == 0 || 1
     max_iter_BA = 100;
     num_fixed_frames_BA = 1;
     absoluteTolerance_BA = 0.001;
-    reprojection_thresh = 1;  
+    reprojection_thresh = 10;  
     plot_stuff = false;
+    plotallfunction = false;
     disp_stuff = false;
     enable_bootstrap = true;
 end
@@ -40,7 +41,8 @@ if ds == 2
     minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
     nonmax_suppression_radius = 10;
     harris_rejection_radius = 10; %TODO 10: good for kitti
-    p3p_pixel_thresh = 0.5;  % TODO 1: good. 5: not so good. larger number means more features, but worse quality
+    p3p_pixel_thresh = 0.5;  % TODO 1: good. 5: not so good. larger number means more features, 
+                             % but worse quality
     p3p_num_iter = 10000;
     BA_iter = 2;
     num_BA_frames = 20;
@@ -199,7 +201,8 @@ for i = 1:last_bootstrap_frame_index
     % Plot reprojected Points
 %     if plot_stuff
 %         P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
-%         error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
+%         error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));
+%/nnz(in_essential);
 %         fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
 %         figure(83)
 %         clf;
@@ -286,11 +289,9 @@ T_C_W = inv(T);
 Points3D_cam = T_C_W(1:3,:) * Points3D;
 within_min = Points3D_cam(3, :) > 0;
 within_max = Points3D_cam(3,:) < max_allowed_point_dist;
-keep_camera_angle = (abs(Points3D_cam(1:2, :))<[anglex; angley].*(Points3D_cam(3, :)));
-Points3D = Points3D(:, (within_min & within_max & ...
-    keep_camera_angle(1,:) & keep_camera_angle(2,:)));
-keypoints_latest = keypoints_latest((within_min & within_max & ...
-    keep_camera_angle(1,:) & keep_camera_angle(2,:)), :);
+keep_camera_angle = all((abs(Points3D_cam(1:2, :))<[anglex; angley].*(Points3D_cam(3, :))),1);
+Points3D = Points3D(:, (within_min & within_max & keep_camera_angle));
+keypoints_latest = keypoints_latest((within_min & within_max & keep_camera_angle), :);
 
 % new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
@@ -334,6 +335,8 @@ if plot_stuff
     plotContinuous(prev_img, S.X, S.X, S.P, S.C, T, K);
 end
 %% Continuous operation
+
+sizes = [last_bootstrap_frame_index size(S.P,2) size(S.C,2) 0 nnz(~keep_camera_angle) nnz(~keep_reprojected)];
 
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -381,7 +384,7 @@ for i = range
     end
     
     tic
-    [T, S.P, S.X, best_inlier_mask] = ...
+    [T, S.P, S.X, best_inlier_mask] = ... % T=T_W_C;
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
     
@@ -425,14 +428,20 @@ for i = range
         S.Frames, K, baseline_thresh, reprojection_thresh);
     X_new = X_new(:, keep_triang);
     % toc
+    C_plotall = S.C;
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
-        [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
+        [S, keep_P_BA, X_new,keep_camera_angle] = pointSanityCheck(S, keep_P_BA, T, ...
             X_new, keep_triang, ...
             max_allowed_point_dist, anglex, angley);
     end
-        
+    
+    if plotallfunction
+        sizes = [sizes; ...
+            i size(S.P,2) size(C_plotall,2) size(X_new,2) nnz(~keep_camera_angle) nnz(~keep_triang)];
+        plotall(image,S.X',S.P',X_new',C_plotall',keep_triang,keep_camera_angle,T(1:3,4),sizes)
+    end
     
         % add newest camera pose to all camera poses
     cameraPoses_new = table;
@@ -463,7 +472,8 @@ for i = range
             % toc
         end
         
-%         BA_iter = 11; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
+%         BA_iter = 11; % use 2 to make sure that the last camera 
+%                       % from the last bundle adjustment is used again!
         
     else
         BA_iter = BA_iter + 1;

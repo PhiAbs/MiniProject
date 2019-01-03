@@ -18,8 +18,11 @@ X_inlier = X(:,inlier_idx);
 
 % redo pose estimation only with inliers
 
-[R_W_C, t_W_C, ~] = estimateWorldCameraPose(double(P_inlier'),double(X_inlier'),...
-    cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh);
+% [R_W_C, t_W_C, inliers] = estimateWorldCameraPose(double(P_inlier'),double(X_inlier'),...
+%     cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh);
+
+% disp(['first: ',num2str(nnz(inlier_idx)/length(inlier_idx))])
+% disp(['second: ',num2str(nnz(inliers)/length(inliers))])
 
 T_W_C = [R_W_C', t_W_C'; 0 0 0 1];
 % P_inlier = P(:,inlier_idx);
