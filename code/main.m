@@ -393,7 +393,7 @@ for i = range
     % tic
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
-    X_new = X_new(:,keep_triang);
+    X_new = X_new(:,keep_triang)
     % toc
     
     if ~isempty(X_new)
