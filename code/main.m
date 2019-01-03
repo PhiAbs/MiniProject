@@ -4,27 +4,27 @@ ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0 || 1
     % good params for kitti and malaga
-    num_first_image = 1; % nr 1 would refer to the first image in the folder
-    bidirect_thresh = 0.3; % 0.3: good. larger number means more features (but worse quality)
+    num_first_image = 700; % nr 1 would refer to the first image in the folder
+    bidirect_thresh = 3; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
     baseline_thresh = 0.01; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
     harris_num_image_splits = 1;
-    minQuality_Harris = 0.0000001;  %0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 20; % larger number means less features
-    harris_rejection_radius = 20; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+    minQuality_Harris = 0.0001;  %0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 15; % larger number means less features
+    harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
     p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
     p3p_num_iter = 10000;
     BA_iter = 2;
     num_BA_frames = 20;
     max_iter_BA = 100;
-    num_fixed_frames_BA = 1;
+    num_fixed_frames_BA = 2;
     absoluteTolerance_BA = 0.001;
     reprojection_thresh = 1;  
     plot_stuff = false;
-    disp_stuff = false;
+    disp_stuff = true;
     enable_bootstrap = true;
 end
 
@@ -196,22 +196,6 @@ for i = 1:last_bootstrap_frame_index
             num2str(length(keypoints_start))]);
     end
     
-    % Plot reprojected Points
-%     if plot_stuff
-%         P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
-%         error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));%/nnz(in_essential);
-%         fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
-%         figure(83)
-%         clf;
-%         imshow(image)
-%         hold on;
-%         plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
-%         hold on;
-%         plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
-%         hold on;
-%         pause(0.01);
-%     end
-    
     image_prev = image;
 end
 
@@ -307,7 +291,7 @@ S.C = kp_new_sorted_out;
 S.F = S.C;
 T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
 S.T = T(:)* ones(1, size(S.C, 2));
-S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
+S.Frames = (last_bootstrap_frame_index) * ones(1, size(S.C, 2));
 
 % store data for bundle adjustment
 cameraPoses_all = table;
@@ -419,8 +403,6 @@ for i = range
     end
     
     % tic
-%     [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
-%         S.Frames, K, baseline_thresh, reprojection_thresh);
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
     X_new = X_new(:, keep_triang);
@@ -429,8 +411,7 @@ for i = range
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
         [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
-            X_new, keep_triang, ...
-            max_allowed_point_dist, anglex, angley);
+            X_new, keep_triang, anglex, angley);
     end
         
     
@@ -494,6 +475,7 @@ for i = range
     S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
     S.Frames = [S.Frames, i*ones(1, size(kp_new_sorted_out, 2))]; 
     S.C_trace_tracker(end+1:end+size(kp_new_sorted_out, 2), end, :) = kp_new_sorted_out';
+    
     setPoints(tracker_P, S.P');
     setPoints(tracker_C, S.C');
     
