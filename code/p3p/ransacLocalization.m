@@ -8,9 +8,17 @@ function [T_W_C, P_inlier, X_inlier, inlier_idx] = ransacLocalization(P, X, K, p
 
 cameraParams = cameraParameters('IntrinsicMatrix',K');
 % not sure about the exact output R_W_C or R_C_W
+inlier_percentage = 0;
+
+while(inlier_percentage <= 0.7)
 
 [R_W_C, t_W_C, inlier_idx] = estimateWorldCameraPose(double(P'),double(X'),...
-    cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh);
+    cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh, ...
+    'Confidence',99.99999);
+inlier_percentage = nnz(inlier_idx)/length(inlier_idx);
+disp(['p3p inlier percentage: ',num2str(inlier_percentage)])
+
+end
 
 % T_W_C = [R_W_C', t_W_C'; 0 0 0 1];
 P_inlier = P(:,inlier_idx);
@@ -21,7 +29,6 @@ X_inlier = X(:,inlier_idx);
 % [R_W_C, t_W_C, inliers] = estimateWorldCameraPose(double(P_inlier'),double(X_inlier'),...
 %     cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh);
 
-% disp(['first: ',num2str(nnz(inlier_idx)/length(inlier_idx))])
 % disp(['second: ',num2str(nnz(inliers)/length(inliers))])
 
 T_W_C = [R_W_C', t_W_C'; 0 0 0 1];

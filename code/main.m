@@ -5,7 +5,7 @@ ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 if ds == 0 || 1
     % good params for kitti and malaga
     num_first_image = 1; % nr 1 would refer to the first image in the folder
-    bidirect_thresh = 1; % 0.3: good. larger number means more features (but worse quality)
+    bidirect_thresh = inf; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
     baseline_thresh = 0.02; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
@@ -14,9 +14,9 @@ if ds == 0 || 1
     harris_num_image_splits = 1;
     minQuality_Harris = 0.1;  %0.001: good. smaller number means more features!
     nonmax_suppression_radius = 15; % larger number means less features
-    harris_rejection_radius = 20; %TODO: make it same as nonmax suppression radius? 10: good for kitti
-    p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
-    p3p_num_iter = 10000;
+    harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+    p3p_pixel_thresh = 2;  % 1: good. 5: not so good. larger number means more features, but worse quality
+    p3p_num_iter = 100000;
     BA_iter = 2;
     num_BA_frames = 20;
     max_iter_BA = 100;
@@ -24,7 +24,7 @@ if ds == 0 || 1
     absoluteTolerance_BA = 0.001;
     reprojection_thresh = 10;  
     plot_stuff = false;
-    plotallfunction = false;
+    enable_plotall = true;
     disp_stuff = false;
     enable_bootstrap = true;
 end
@@ -324,7 +324,7 @@ S.C_trace_tracker(:, num_BA_frames, 1) = S.C(1,:)';
 S.C_trace_tracker(:, num_BA_frames, 2) = S.C(2,:)';
 
 % initialize KLT trackers for continuous mode
-tracker_P = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
+tracker_P = vision.PointTracker('MaxBidirectionalError',bidirect_thresh,'MaxIterations',50);
 initialize(tracker_P, S.P', image);
 tracker_C = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(tracker_C, S.C', image);
@@ -336,7 +336,7 @@ if plot_stuff
 end
 %% Continuous operation
 
-sizes = [last_bootstrap_frame_index size(S.P,2) size(S.C,2) 0 nnz(~keep_camera_angle) nnz(~keep_reprojected)];
+sizes = [last_bootstrap_frame_index size(S.P,2) 0 size(S.C,2) nnz(~keep_camera_angle) nnz(~keep_reprojected)];
 
 range = (last_bootstrap_frame_index+1):last_frame;
 for i = range
@@ -364,6 +364,8 @@ for i = range
 %     do KLT tracking for keypoints
     [points_KLT_P, keep_P] = tracker_P(image);
     % toc
+    Pold = points_KLT_P;
+    keep_KLT_Pold = keep_P;
     
     S.P = points_KLT_P(keep_P,:)';
     S.X = S.X(:, keep_P);
@@ -387,6 +389,8 @@ for i = range
     [T, S.P, S.X, best_inlier_mask] = ... % T=T_W_C;
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
+    
+    keep_p3p_Pklt = best_inlier_mask;
     
     % update data for bootstrap: update only the points that can still be
     % tracked!
@@ -435,12 +439,8 @@ for i = range
         [S, keep_P_BA, X_new,keep_camera_angle] = pointSanityCheck(S, keep_P_BA, T, ...
             X_new, keep_triang, ...
             max_allowed_point_dist, anglex, angley);
-    end
-    
-    if plotallfunction
-        sizes = [sizes; ...
-            i size(S.P,2) size(C_plotall,2) size(X_new,2) nnz(~keep_camera_angle) nnz(~keep_triang)];
-        plotall(image,S.X',S.P',X_new',C_plotall',keep_triang,keep_camera_angle,T(1:3,4),sizes)
+    else
+        keep_camera_angle = [];
     end
     
         % add newest camera pose to all camera poses
@@ -449,6 +449,20 @@ for i = range
     cameraPoses_new.Orientation{1} = T(1:3, 1:3);
     cameraPoses_new.Location{1} = T(1:3, end)';
     cameraPoses_all = [cameraPoses_all; cameraPoses_new];
+    
+    if enable_plotall
+        sizes = [sizes; ...
+            i size(S.P,2)-size(X_new,2) size(X_new,2) size(C_plotall,2) nnz(~keep_camera_angle) nnz(~keep_triang)];
+        if length(sizes) >= 10
+            sizes(1,:) = [];
+        end
+        t_WC_BA = [];
+        if i > num_BA_frames+1
+            t_WC_BA = cameraPoses_all.Location{end-num_BA_frames};
+        end
+        plotall(image,S.X',S.P',X_new',C_plotall',keep_triang,keep_camera_angle,T(1:3,4),sizes,t_WC_BA,...
+            Pold,keep_KLT_Pold,keep_p3p_Pklt)
+    end
     
     % bundle adjustment
     if BA_iter == num_BA_frames && enable_bootstrap
@@ -504,9 +518,9 @@ for i = range
     S.T = [S.T, T(:)*ones(1, size(kp_new_sorted_out, 2))]; 
     S.Frames = [S.Frames, i*ones(1, size(kp_new_sorted_out, 2))]; 
     S.C_trace_tracker(end+1:end+size(kp_new_sorted_out, 2), end, :) = kp_new_sorted_out';
-    setPoints(tracker_P, S.P');
-    setPoints(tracker_C, S.C');
     
+    setPoints(tracker_P, S.P');
+    setPoints(tracker_C, S.C'); 
     
     prev_img = image;
     

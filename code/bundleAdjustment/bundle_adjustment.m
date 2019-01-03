@@ -52,11 +52,11 @@ for i = 1:num_BA_frames
         - cameraPoses.Location{i};
 end
 
-disp(['max reprojection error after BA: ' num2str(max(reprojectionErrors))]);
-disp('BA change in orientation of all matrices combined')
-disp(num2str(orientation_change_sum));
-disp('BA change in location of all matrices combined')
-disp(num2str(location_change_sum));
+% disp(['max reprojection error after BA: ' num2str(max(reprojectionErrors))]);
+% disp('BA change in orientation of all matrices combined')
+% disp(num2str(orientation_change_sum));
+% disp('BA change in location of all matrices combined')
+% disp(num2str(location_change_sum));
 
 % % update all 3D points that were refined
 S.X_BA = refinedPoints3D;
