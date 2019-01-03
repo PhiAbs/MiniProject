@@ -1,12 +1,10 @@
 function  [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
-    X_new, keep_triang, keep_reprojected, max_allowed_point_dist, anglex, angley)
+    X_new, keep_triang, max_allowed_point_dist, anglex, angley)
 %POINTSANITYCHECK makes sure that points very far away or points behind the
 %camera are thrown away.
 
 % sort out all points with a too large reprojection error
 C_keep_triang = S.C(:, keep_triang);
-C_keep_reprojected = C_keep_triang(:, keep_reprojected);
-X_new = X_new(:, keep_reprojected);
 
 T_C_W = inv(T);
 X_new_cam = T_C_W(1:3,:) * [X_new; ones(1, size(X_new, 2))];
@@ -19,7 +17,7 @@ keep_camera_angle = (abs(X_new_cam(1:2, :))<[anglex; angley].*(X_new_cam(3, :)))
 X_new = X_new(:, (~points_far_away & ~points_behind_cam & ...
     keep_camera_angle(1,:) & keep_camera_angle(2,:)));
 
-C_valid = C_keep_reprojected(:, (~points_far_away & ~points_behind_cam & ...
+C_valid = C_keep_triang(:, (~points_far_away & ~points_behind_cam & ...
     keep_camera_angle(1,:) & keep_camera_angle(2,:)));
 
 S.P = [S.P, C_valid];

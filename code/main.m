@@ -1,12 +1,12 @@
 %% Setup
 clear; close all; clc;
-ds = 1; % 0: KITTI, 1: Malaga, 2: parking
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
 if ds == 0 || 1
     % good params for kitti and malaga
     bidirect_thresh = 0.3; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
-    baseline_thresh = 0.1; % larger number means less features (but better triangulation)
+    baseline_thresh = 0.08; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
@@ -22,8 +22,8 @@ if ds == 0 || 1
     num_fixed_frames_BA = 3;
     absoluteTolerance_BA = 0.001;
     reprojection_thresh = 2;  %15: good. 10000: not so good for kitti, good for parking
-    plot_stuff = false;
-    disp_stuff = true;
+    plot_stuff = true;
+    disp_stuff = false;
     enable_bootstrap = true;
 end
 
@@ -103,7 +103,7 @@ addpath('bundleAdjustment');
 if ds == 1
     image = uint8(loadImage(ds, 1, path, left_images));
 else
-    image = uint8(loadImage(ds, 1, path));
+    image = uint8(loadImage(ds, 0, path));
 end
 
 % points = detectHarrisFeatures(image, 'MinQuality', minQuality_Harris);
@@ -128,7 +128,7 @@ for i = 1:last_bootstrap_frame_index
     if ds == 1
         image = uint8(loadImage(ds, i+1, path, left_images));
     else
-        image = uint8(loadImage(ds, i+1, path));
+        image = uint8(loadImage(ds, i, path));
     end
     
     % find matching keypoints in newest image using KLT
@@ -391,19 +391,16 @@ for i = range
     end
     
     % tic
-    [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
+    [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
+    X_new = X_new(:,keep_triang);
     % toc
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
         [S, keep_P_BA, X_new] = pointSanityCheck(S, keep_P_BA, T, ...
-            X_new, keep_triang, logical(keep_reprojected), ...
+            X_new, keep_triang, ...
             max_allowed_point_dist, anglex, angley);
-        if disp_stuff
-            disp(['points with large reprojection error (sorted out): ', ...
-                num2str(sum(~keep_reprojected))]);
-        end
     end
         
     % extract new keypoints
@@ -458,12 +455,12 @@ for i = range
             keep_P_BA, K, max_iter_BA, num_fixed_frames_BA, absoluteTolerance_BA);
         % toc
         
-        if plot_stuff  
+%         if plot_stuff  
             disp('plot bundle adjustment')
             % tic
             plotBundleAdjustment(cameraPoses_all)
             % toc
-        end
+%         end
         
 %         BA_iter = 11; % use 2 to make sure that the last camera from the last bundle adjustment is used again!
         

@@ -11,15 +11,15 @@ for BA_i = 1:size(S.P_BA, 1)
     valid_points = (S.P_BA(BA_i, :, 1) > 0);
     
 %     only keep points that were tracked for more than one frame!
-    if sum(valid_points) > 1
+%     if sum(valid_points) > 1
         tracked_long_enough(BA_i) = true;
         points_BA = ...
             [S.P_BA(BA_i, valid_points, 1); S.P_BA(BA_i, valid_points, 2)]';
         pointTracks(iterator) = pointTrack(view_ids(valid_points), points_BA);
         iterator = iterator + 1;
-    else
-        tracked_long_enough(BA_i) = false;
-    end
+%     else
+%         tracked_long_enough(BA_i) = false;
+%     end
 end
 
 % store the num_BA_frames last camera poses and IDs in a new table (used
