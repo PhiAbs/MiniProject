@@ -7,7 +7,7 @@ if ds == 0 || 1
     num_first_image = 1; % nr 1 would refer to the first image in the folder
     bidirect_thresh = inf; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
-    baseline_thresh = 0.02; % larger number means less features (but better triangulation)
+    baseline_thresh = 0.01; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
@@ -125,7 +125,7 @@ pointTracker = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(pointTracker, keypoints_start, image);
 
 image_prev = image;
-
+image_first = image;
 for i = 1:last_bootstrap_frame_index
     % iteratively add more images if neccessary
     if ds == 1
@@ -235,22 +235,50 @@ cameraParams = cameraParameters('IntrinsicMatrix',K');
 
 [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
 
-M1 = K * eye(3,4);
-Mend = K * [R_C2_W, t_C2_W];
-[worldPoints, reprojectionErrors] = triangulate(p1(1:2, :)', ...
-    pend(1:2, :)', M1', Mend');
-Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
+T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
+T_World = [eye(3) zeros(3,1); [0, 0, 0, 1]];
+[keep_triang, worldPoints] = triangulatePoints(keypoints_latest', keypoints_start', ...
+    T_W_C,T_World(:)*ones(1,size(keypoints_latest,1)), ...
+    ones(1,size(keypoints_latest,1)), K, baseline_thresh, reprojection_thresh);
+worldPoints = worldPoints(:, keep_triang);
+Points3D = [worldPoints; ones(1, size(worldPoints, 2))];
 
-T=[R_C2_W, t_C2_W;0 0 0 1]^(-1);
-[error, inlier_reprojection] = estimate_projection_error( ...
-    keypoints_latest, Points3D(1:3,:)', T, K, 1);
-nnz(~inlier_reprojection)
+% keypoints_start = keypoints_start(keep_triang, :);
+% keypoints_latest = keypoints_latest(keep_triang, :);
 
-% remove points that have a large reprojection error
-keep_reprojected = (reprojectionErrors < reprojection_thresh);
-Points3D = Points3D(:, keep_reprojected);
-keypoints_start = keypoints_start(keep_reprojected, :);
-keypoints_latest = keypoints_latest(keep_reprojected, :);
+
+% % second time
+% p1 = [keypoints_start'; ones(1, length(keypoints_start))];
+% pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
+% 
+% cameraParams = cameraParameters('IntrinsicMatrix',K');
+% [E, in_essential] = estimateEssentialMatrix(keypoints_start, ...
+%     keypoints_latest, cameraParams, 'MaxNumTrials', ...
+%         maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
+% 
+% [Rots,u3] = decomposeEssentialMatrix(E);
+% 
+% [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
+% 
+% T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
+% T_World = [eye(3) zeros(3,1); [0, 0, 0, 1]];
+% [keep_triang, worldPoints] = triangulatePoints(keypoints_latest', keypoints_start', ...
+%     T_W_C,T_World(:)*ones(1,size(keypoints_latest,1)), ...
+%     ones(1,size(keypoints_latest,1)), K, baseline_thresh, reprojection_thresh);
+% worldPoints = worldPoints(:, keep_triang);
+% Points3D = [worldPoints; ones(1, size(worldPoints, 2))];
+
+S = struct;
+S.P = keypoints_latest(keep_triang, :)';
+S.X = Points3D(1:3,:);
+S.C = keypoints_latest(~keep_triang, :)';
+S.F = keypoints_start(~keep_triang, :)';
+S.T = T_World(:) * ones(1, size(S.C, 2));
+S.Frames = 0 * ones(1, size(S.C, 2));
+
+keypoints_start = keypoints_start(keep_triang, :);
+keypoints_latest = keypoints_latest(keep_triang, :);
+
 % 
 %     T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
 %     T_World = [eye(3) ones(3,1); [0, 0, 0, 1]];
@@ -282,16 +310,13 @@ points = harris_sector_wise(harris_num_image_splits, ...
 
 kp_new_latest_frame = points.Location;
 
-%
-
 % remove points that lie behind the first camera or that are far away
-T_C_W = inv(T);
+T_C_W = inv(T_W_C);
 Points3D_cam = T_C_W(1:3,:) * Points3D;
-within_min = Points3D_cam(3, :) > 0;
-within_max = Points3D_cam(3,:) < max_allowed_point_dist;
 keep_camera_angle = all((abs(Points3D_cam(1:2, :))<[anglex; angley].*(Points3D_cam(3, :))),1);
-Points3D = Points3D(:, (within_min & within_max & keep_camera_angle));
-keypoints_latest = keypoints_latest((within_min & within_max & keep_camera_angle), :);
+Points3D = Points3D(:,keep_camera_angle);
+
+keypoints_latest = keypoints_latest(keep_camera_angle, :);
 
 % new Harris keypoints must NOT already be tracked points!! 
 %These points are then candidate Keypoints for the continuous mode.
@@ -301,14 +326,13 @@ kp_new_sorted_out = checkIfKeypointIsNew(kp_new_latest_frame', ...
 % Create Structs for continuous operation
 % Struct S contains
 prev_img = image;
-S = struct;
 S.P = keypoints_latest';
 S.X = Points3D(1:3,:);
-S.C = kp_new_sorted_out;
-S.F = S.C;
+S.C = [S.C kp_new_sorted_out];
+S.F = [S.F kp_new_sorted_out];
 T = [R_C2_W', -R_C2_W'*t_C2_W; 0,0,0,1];
-S.T = T(:)* ones(1, size(S.C, 2));
-S.Frames = last_bootstrap_frame_index * ones(1, size(S.C, 2));
+S.T = [S.T T(:)* ones(1, size(kp_new_sorted_out, 2))];
+S.Frames = [S.Frames last_bootstrap_frame_index * ones(1, size(kp_new_sorted_out, 2))];
 
 % store data for bundle adjustment
 cameraPoses_all = table;

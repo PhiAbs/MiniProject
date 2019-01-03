@@ -10,7 +10,7 @@ cameraParams = cameraParameters('IntrinsicMatrix',K');
 % not sure about the exact output R_W_C or R_C_W
 inlier_percentage = 0;
 
-while(inlier_percentage <= 0.7)
+% while(inlier_percentage <= 0.7)
 
 [R_W_C, t_W_C, inlier_idx] = estimateWorldCameraPose(double(P'),double(X'),...
     cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh, ...
@@ -18,7 +18,7 @@ while(inlier_percentage <= 0.7)
 inlier_percentage = nnz(inlier_idx)/length(inlier_idx);
 disp(['p3p inlier percentage: ',num2str(inlier_percentage)])
 
-end
+% end
 
 % T_W_C = [R_W_C', t_W_C'; 0 0 0 1];
 P_inlier = P(:,inlier_idx);
