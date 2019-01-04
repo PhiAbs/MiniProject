@@ -26,7 +26,7 @@ if ds == 0 || 1
     plot_stuff = false;
     enable_plotall = true;
     disp_stuff = false;
-    enable_bootstrap = true;
+    enable_BA = true;
 end
 
 if ds == 2
@@ -52,7 +52,7 @@ if ds == 2
     reprojection_thresh = 1;  
     plot_stuff = false;
     disp_stuff = true;
-    enable_bootstrap = true;
+    enable_BA = false;
 end
 
 
@@ -488,7 +488,7 @@ for i = range
     end
     
     % bundle adjustment
-    if BA_iter == num_BA_frames && enable_bootstrap
+    if BA_iter == num_BA_frames && enable_BA
         % delete all rows in the BA matrices which only contain zeros or
         % only one valid point (they cannot be used for BA
 
