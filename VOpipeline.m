@@ -22,21 +22,22 @@ angley = K(2,3)/K(2,2);
 addpath('code')
 
 % parameters
-repro_thres = 10;
 bidirect_thresh = 0.3; % TODO  0.3: good
-maxDistance_essential = 0.001;  % 0.1 is too big for parking!! 0.01 might work as well
+maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-minQuality_Harris = 0.01;  %TODO  0.1: good
+minQuality_Harris = 0.1;  %TODO  0.1: good
 harris_rejection_radius = 5; %TODO 10: good for kitti
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 5000;
-reprojection_thresh = 30;  %15: good. 10000: not so good for kitti, good for parking
+reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
+triangAngleThres = 0.02;
 
 
 %% Bootstrapping
 
 img0 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',0)])));
 img1 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',1)])));
+img2 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',2)])));
 
 points = detectHarrisFeatures(img0,'MinQuality',0.1);
 kps = points.Location;  %keypoint_start
@@ -44,10 +45,15 @@ kps = points.Location;  %keypoint_start
 pointTracker = vision.PointTracker('MaxBidirectionalError',0.3);
 initialize(pointTracker, kps, img0);
 setPoints(pointTracker,kps);
-[kpl,keep,confidence] = pointTracker(img1);   % keypoints_latest
+[kpl,keep] = pointTracker(img1);   % keypoints_latest
 kps = kps(keep,:);
 kpl = kpl(keep,:);
-confidence = confidence(keep);
+
+% track a second time
+setPoints(pointTracker,kpl);
+[kpl,keep] = pointTracker(img2);   % keypoints_latest
+kps = kps(keep,:);
+kpl = kpl(keep,:);
 
 % plot to validate
 % figure(1)
@@ -60,16 +66,16 @@ confidence = confidence(keep);
 [E, keep] = estimateEssentialMatrix(kps, ...
     kpl, cameraParams, 'MaxNumTrials', ...
     maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
-kps = kps(keep,:);
-kpl = kpl(keep,:);
+% kps = kps(keep,:);
+% kpl = kpl(keep,:);
 % subplot(2,1,2)
-% showMatchedFeatures(img0,img1,kps,kpl)
+% showMatchedFeatures(img0,img2,kps,kpl)
 
 [R_WC,t_WC] = relativeCameraPose(E,cameraParams,kps,kpl);
 % transform to our system
 R_WC = R_WC';
 t_WC = t_WC';
-T_WC = [R_WC,t_WC];
+T_WC = [R_WC,t_WC]
 
 T_CW = [R_WC',-R_WC'*t_WC];
 
@@ -77,9 +83,14 @@ T_CW = [R_WC',-R_WC'*t_WC];
 % M = cameraMatrix(cameraParams,R_W_C', t_W_C'); % this would be the other
 % convention for triangulate...
 M = (K*T_CW)';
+[Xnew, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
 
-S.P = kpl;
-[S.X, reprojectionErrors] = triangulate( kps, kpl, (K*[eye(3) zeros(3,1)])', M);
+c_inf_homo = T_WC(1:3,1:3)*inv(K)*[kpl ones(length(kpl),1)]';
+f_inf_homo = inv(K)*[kps ones(length(kps),1)]';
+triangulationAngles = acos(sum(c_inf_homo.*f_inf_homo,1)./...
+(vecnorm(c_inf_homo,2).*vecnorm(f_inf_homo,2)));
+
+% P = linearTriangulation([kps ones(length(kps),1)]',[kpl ones(length(kpl),1)]',(K*[eye(3) zeros(3,1)]),M');
 % subplot(2,1,1)
 % plot3(S.X(:,1),S.X(:,2),S.X(:,3),'*'); view(0,90);
 % xlabel('x')
@@ -87,41 +98,55 @@ S.P = kpl;
 % zlabel('z')
 % grid on;
 
+Xnew_cam = T_CW*[Xnew ones(size(Xnew,1),1)]';
+keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))'...
+    & reprojectionErrors < reprojection_thresh...
+    & triangulationAngles' > triangAngleThres,2);
+
 %% continious
 
-keep = all((abs(S.X(:,1:2))<[anglex angley].*S.X(:,3)) & reprojectionErrors < reprojection_thresh ,2);
-S.X = S.X(keep,:);
-S.P = S.P(keep,:);
+S.X = Xnew(keep,:);
+S.P = kpl(keep,:);
+S.C = kpl(~keep,:);
+S.F = kps(~keep,:);
+T0 = [eye(3) zeros(3,1)];
+S.T = T0(:)*ones(1,size(S.C,1));
 % extract new features in 2nd image
 points = detectHarrisFeatures(img1,'MinQuality', minQuality_Harris);
-kpl = points.Location;
-keep = ~ismember(kpl,S.P,'rows');
-S.C = kpl(keep,:);
-S.T = T_CW(:) * ones(1,nnz(keep));
-S.F = S.C;
+% kpl = points.Location;
+% keep = ~ismember(kpl,S.P,'rows');
+kpl=checkIfKeypointIsNew(points.Location', S.P', harris_rejection_radius);
+kpl=kpl';
+S.C = [S.C; kpl];
+S.T = [S.T T_WC(:)*ones(1,size(S.C,1))];
+S.F = [S.F; kpl];
 
-img = img1;
-T = T_CW;
-clear img0 img1 reprojection_error F T_CW;
+img = img2;
+clear img0 img1 img2 reprojection_error F T_CW;
 
-sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
-     nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
-        nnz(~(reprojectionErrors<repro_thres))];
+% sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
+%      nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
+%         nnz(~(reprojectionErrors<reprojection_thres))];
+img_prev = img;
+plotall(img,S.X,S.P,Xnew,S.C,...
+    reprojectionErrors < reprojection_thresh,...
+    triangulationAngles' > triangAngleThres,...
+    all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+    [zeros(3,1) t_WC])
+% initialize KLT trackers for continuous mode
+trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
+initialize(trackP, S.P, img_prev);
+trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
+initialize(trackC, S.C, img_prev);
 
 for i=2:last_frame
     
     % get new image
     img_prev = img;
     img = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',i)])));
-    % track features into new image
-    % initialize KLT trackers for continuous mode
-    trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
-    initialize(trackP, S.P, img_prev);
-    trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
-    initialize(trackC, S.C, img_prev);
     
-    [points, keepP, confidence] = trackP(img);
-%     showMatchedFeatures(img_prev,img,S.P(keepP,:),points(keepP,:))
+    % track features into new image
+    [points, keepP] = trackP(img);
     S.P = points(keepP,:);
     S.X = S.X(keepP,:);
     [points, keepC] = trackC(img);
@@ -133,31 +158,41 @@ for i=2:last_frame
         'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
     R_WC = R_WC';
     t_WC = t_WC';
+    T_WC = [R_WC, t_WC];
     T_CW = [R_WC',-R_WC'*t_WC];
     nnz(keepP)/length(keepP);
     S.X = S.X(keepP,:);
     S.P = S.P(keepP,:);
-%     plot(t_W_C(1),t_W_C(3),'o','linewidth',2)
-%     hold on;
 
     % triangulate S.C and S.F
-    Xnew = []; reprojectionErrors = [];
+    Xnew = []; reprojectionErrors = []; triangulationAngles = [];
+    M = (K*T_CW)';
     for j=1: size(S.C,1)
-        [new, reprojectionError] = triangulate( S.F(j,:), S.C(j,:), ...
-            (K*reshape(S.T(:,1),3,4))', (K*T_CW)');
+        T_WCold = reshape(S.T(:,j),3,4);
+        T_ColdW = [T_WCold(:,1:3)',-T_WCold(:,1:3)'*T_WCold(:,4)];
+        Mold = (K*T_ColdW)';
+        [new, reprojectionError] = triangulate( S.F(j,:), S.C(j,:), Mold, M);
         Xnew = [Xnew; new];
         reprojectionErrors = [reprojectionErrors; reprojectionError];
+        
+        c_inf_homo = T_ColdW(1:3,1:3)*T_WC(1:3,1:3)*inv(K)*[S.C(j,:) 1]';
+        f_inf_homo = inv(K)*[S.F(j,:) 1]';
+    
+        triangulationAngle = acos(sum(c_inf_homo.*f_inf_homo,1)./...
+        (vecnorm(c_inf_homo,2).*vecnorm(f_inf_homo,2)));
+        triangulationAngles = [triangulationAngles; triangulationAngle];
     end
     
-    keep = all((abs(Xnew(:,1:2)-t_WC(1:2)')<[anglex angley].*(Xnew(:,3)-t_WC(3))) &...
-        reprojectionErrors < repro_thres ,2); 
-    sizes = [sizes; i size(S.P,1) size(S.C,1) nnz(keep)...
-        nnz(~(all((abs(Xnew(:,1:2)-t_WC(1:2)')<[anglex angley].*(Xnew(:,3)-t_WC(3))),2)))...
-        nnz(~(reprojectionErrors < repro_thres))];
+    Xnew_cam = T_CW*[Xnew ones(size(Xnew,1),1)]';
+    keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))'...
+                    & reprojectionErrors < reprojection_thresh ...
+                    & triangulationAngles > triangAngleThres,2);
+
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors<repro_thres, ...
-        all((Xnew > [-200 -100 0] & Xnew < [200 100 100]),2), t_WC', sizes)
-%     pause(2);
+    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
+        triangulationAngles > triangAngleThres,...
+        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+        t_WC)%, sizes)
     
     Xnew = Xnew(keep,:);
     S.X = [S.X; Xnew];
@@ -170,17 +205,13 @@ for i=2:last_frame
     % extract new Keypints
     points = detectHarrisFeatures(img,'MinQuality', minQuality_Harris);
     kpl = points.Location;  %keypoint_latest
-%     keep = ~ismember(kpl,[S.P; S.C],'rows');
-%     S.C = [S.C; kpl(keep,:)];
-%     S.T = [S.T, T_CW(:) * ones(1,nnz(keep))];
-%     S.F = [S.F; kpl(keep,:)];
     
     % make sure that the same keypoint does not get tracked more than once
     kp_new_sorted_out = checkIfKeypointIsNew(kpl', ...
         [(S.P)', (S.C)'], harris_rejection_radius);      
     S.C = [S.C; kp_new_sorted_out'];
     S.F = [S.F; kp_new_sorted_out'];
-    S.T = [S.T, T_CW(:) * ones(1,size(kp_new_sorted_out, 2))];
+    S.T = [S.T, T_WC(:) * ones(1,size(kp_new_sorted_out, 2))];
     setPoints(trackP, S.P);
     setPoints(trackC, S.C);
     
@@ -190,7 +221,7 @@ end
 
 %% Functions
 
-function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
+function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,t_WC,sizes)
 
 %     figure('name','11','units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
     figure(11)
@@ -200,32 +231,35 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
     hold off;
     imshow(image);
     hold on;
-    plot(C(~keepReprojection,1),C(~keepReprojection,2),'bs','linewidth',1.5)
-    plot(C(~keepGreater0,1),C(~keepGreater0,2),'cd','linewidth',1.5)
-    plot(C(keepGreater0&keepReprojection,1),C(keepGreater0&keepReprojection,2),...
+    plot([0;C(~keepReprojection,1)],[0;C(~keepReprojection,2)],'bs','linewidth',1.5)
+    plot([0;C(~keepAngle,1)],[0;C(~keepAngle,2)],'cd','linewidth',1.5)
+    plot([0;C(~keepBehind,1)],[0;C(~keepBehind,2)],'b+','linewidth',1.5)
+    plot([0;C(keepAngle&keepReprojection&keepBehind,1)],...
+        [0;C(keepAngle&keepReprojection&keepBehind,2)],...
         'yo','linewidth',1.5)
     plot(P(:,1),P(:,2),'r*','linewidth',1.5)
     legend('ReprojectionError is too big',...
-        'triangulated behind camera',...
+        'Angle too small',...
+        'Triangulated behind camera',...
         'newly triangulated',...
         'old 3D correspondences')
     title('image with 3D correspondences and new kps')
     
     
-    % bar diagram with sizes of different matrices
-    subplot(2,3,4)
-    bar(sizes(:,1),sizes(:,2:end))
-    legend('#-landmarks','#-tracked keypoints','#-newly triangulated',...
-        '#-outside viewing angle','#-error too big')
-    title('Array sizes over frames')
+%     % bar diagram with sizes of different matrices
+%     subplot(2,3,4)
+%     bar(sizes(:,1),sizes(:,2:end))
+%     legend('#-landmarks','#-tracked keypoints','#-newly triangulated',...
+%         '#-outside viewing angle','#-error too big')
+%     title('Array sizes over frames')
     
     
     % plot lower left as 2D point cloud
     subplot(2,3,5)
     hold on;
-    plot(Xnew(keepGreater0&keepReprojection,1),Xnew(keepGreater0&keepReprojection,3),...
+    plot(Xnew(keepAngle&keepReprojection,1),Xnew(keepAngle&keepReprojection,3),...
         'bx','linewidth',1.5);
-    plot(X(:,1),X(:,3),'rx','linewidth',1.5);
+    plot(X(:,1),X(:,3),'rx','linewidth',1);
     legend('newly triangulated','old landmarks')
     title('2D Pointcloud')
     xlabel('x')
@@ -235,11 +269,31 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepGreater0,t_WC,sizes)
     % plot Camera Positions
     subplot(2,3,6)
     hold on;
-    plot(t_WC(1),t_WC(3),'rx','linewidth',3)
+    plot(t_WC(1,:),t_WC(3,:),'rx','linewidth',1)
     title('Camera Position')
     xlabel('x')
     ylabel('z')
-    axis([-10 10 0 inf])
+    axis equal
 
 end
 
+
+%%
+function kp_new = checkIfKeypointIsNew(kp_new, kp_tracked, threshold)
+% checkIfKeypointIsNew checks if a newly found keypoint (Harris) already
+% existed as a keypoint which was tracked into the image from an earlier stage.
+% Discard a point if it is within a certain radius around an existing
+% keypoint
+% input: 
+% kn_new: newly found keypoints in Image, size 2xN
+% kp_tracked: keypoints tracked from earlier image, size 2xM
+% threshold: If a new point is closer to an existing keypoint than this
+% threshold, the point gets discarded
+% output: 
+% kp_new: sorted out keypoints, size 2xK
+
+for i = 1:length(kp_tracked)
+    distance = sqrt(sum((kp_new - kp_tracked(:,i)).^2));
+    kp_new = kp_new(:,distance > threshold);
+end
+end
