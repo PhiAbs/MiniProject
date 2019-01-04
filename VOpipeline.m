@@ -109,12 +109,14 @@ S.X = Xnew(keep,:);
 S.P = kpl(keep,:);
 S.C = kpl(~keep,:);
 S.F = kps(~keep,:);
+% S.C = kpl;
+% S.F = kps;
+% S.findP = find(keep);
 T0 = [eye(3) zeros(3,1)];
 S.T = T0(:)*ones(1,size(S.C,1));
+% S.Frames = 2*ones(1,size(S.C,1));
 % extract new features in 2nd image
-points = detectHarrisFeatures(img1,'MinQuality', minQuality_Harris);
-% kpl = points.Location;
-% keep = ~ismember(kpl,S.P,'rows');
+points = detectHarrisFeatures(img2,'MinQuality', minQuality_Harris);
 kpl=checkIfKeypointIsNew(points.Location', S.P', harris_rejection_radius);
 kpl=kpl';
 S.C = [S.C; kpl];
@@ -140,7 +142,7 @@ initialize(trackP, S.P, img_prev);
 trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(trackC, S.C, img_prev);
 
-for i=2:last_frame
+for i=3:last_frame
     
     % get new image
     img_prev = img;
@@ -184,7 +186,8 @@ for i=2:last_frame
     end
     
     Xnew_cam = T_CW*[Xnew ones(size(Xnew,1),1)]';
-    keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))'...
+    keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))' ...
+                    & (Xnew_cam(3,:) > 0)' ...
                     & reprojectionErrors < reprojection_thresh ...
                     & triangulationAngles > triangAngleThres,2);
 
@@ -257,7 +260,7 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,t_WC,siz
     % plot lower left as 2D point cloud
     subplot(2,3,5)
     hold on;
-    plot(Xnew(keepAngle&keepReprojection,1),Xnew(keepAngle&keepReprojection,3),...
+    plot(Xnew(keepAngle&keepReprojection&keepBehind,1),Xnew(keepAngle&keepReprojection&keepBehind,3),...
         'bx','linewidth',1.5);
     plot(X(:,1),X(:,3),'rx','linewidth',1);
     legend('newly triangulated','old landmarks')
