@@ -66,8 +66,8 @@ kpl = kpl(keep,:);
 [E, keep] = estimateEssentialMatrix(kps, ...
     kpl, cameraParams, 'MaxNumTrials', ...
     maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
-% kps = kps(keep,:);
-% kpl = kpl(keep,:);
+kps = kps(keep,:);
+kpl = kpl(keep,:);
 % subplot(2,1,2)
 % showMatchedFeatures(img0,img2,kps,kpl)
 
@@ -123,16 +123,17 @@ S.F = [S.F; kpl];
 
 img = img2;
 clear img0 img1 img2 reprojection_error F T_CW;
+img_prev = img;
 
 % sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
 %      nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
 %         nnz(~(reprojectionErrors<reprojection_thres))];
-img_prev = img;
-plotall(img,S.X,S.P,Xnew,S.C,...
+plotall(img_prev,S.X,S.P,Xnew,Xnew,...
     reprojectionErrors < reprojection_thresh,...
     triangulationAngles' > triangAngleThres,...
     all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
     [zeros(3,1) t_WC])
+
 % initialize KLT trackers for continuous mode
 trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(trackP, S.P, img_prev);
@@ -160,7 +161,6 @@ for i=2:last_frame
     t_WC = t_WC';
     T_WC = [R_WC, t_WC];
     T_CW = [R_WC',-R_WC'*t_WC];
-    nnz(keepP)/length(keepP);
     S.X = S.X(keepP,:);
     S.P = S.P(keepP,:);
 
