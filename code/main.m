@@ -5,24 +5,24 @@ ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 if ds == 0 || 1
     % good params for kitti and malaga
     num_first_image = 1; % nr 1 would refer to the first image in the folder
-    bidirect_thresh = inf; % 0.3: good. larger number means more features (but worse quality)
+    bidirect_thresh = 3; % 0.3: good. larger number means more features (but worse quality)
     last_bootstrap_frame_index = 2; 
     baseline_thresh = 0.01; % larger number means less features (but better triangulation)
     maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
     maxNumTrials_Essential = 20000;
     max_allowed_point_dist = 80;  %100: good 150: good especially for parking
     harris_num_image_splits = 1;
-    minQuality_Harris = 0.1;  %0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 15; % larger number means less features
-    harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
-    p3p_pixel_thresh = 2;  % 1: good. 5: not so good. larger number means more features, but worse quality
+    minQuality_Harris = 0.01;  %0.001: good. smaller number means more features!
+    nonmax_suppression_radius = 11; % larger number means less features
+    harris_rejection_radius = 11; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+    p3p_pixel_thresh = 1.5;  % 1: good. 5: not so good. larger number means more features, but worse quality
     p3p_num_iter = 100000;
     BA_iter = 2;
     num_BA_frames = 20;
     max_iter_BA = 100;
-    num_fixed_frames_BA = 1;
+    num_fixed_frames_BA = 2;
     absoluteTolerance_BA = 0.001;
-    reprojection_thresh = 10;  
+    reprojection_thresh = 1.5;  
     plot_stuff = false;
     enable_plotall = true;
     disp_stuff = false;
@@ -409,10 +409,9 @@ for i = range
         disp('run p3p with Ransac on S.P and S.X');
     end
     
-    tic
+
     [T, S.P, S.X, best_inlier_mask] = ... % T=T_W_C;
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
-    toc
     
     keep_p3p_Pklt = best_inlier_mask;
     

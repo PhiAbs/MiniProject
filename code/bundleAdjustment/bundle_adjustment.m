@@ -66,7 +66,7 @@ S.X_BA = refinedPoints3D;
 S.X = S.X_BA(logical(keep_P_BA), :)';
 
 % only keep points with a small reprojection error
-keep_BA_reprojection = reprojectionErrors < 1;
+keep_BA_reprojection = reprojectionErrors < 1.5;
 keep_reprojection = keep_BA_reprojection(logical(keep_P_BA));
 keep_P_BA = keep_P_BA(keep_BA_reprojection);
 S.X_BA = S.X_BA(keep_BA_reprojection, :);

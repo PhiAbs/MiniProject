@@ -16,13 +16,14 @@ inlier_percentage = 0;
     cameraParams, 'MaxNumTrials', num_iter, 'MaxReprojectionError', pixel_thresh, ...
     'Confidence',99.99999);
 inlier_percentage = nnz(inlier_idx)/length(inlier_idx);
-disp(['p3p inlier percentage: ',num2str(inlier_percentage)])
+% disp(['p3p inlier percentage: ',num2str(inlier_percentage)])
 
 % end
 
 % T_W_C = [R_W_C', t_W_C'; 0 0 0 1];
 P_inlier = P(:,inlier_idx);
 X_inlier = X(:,inlier_idx);
+
 
 % redo pose estimation only with inliers
 
