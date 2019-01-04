@@ -2,59 +2,30 @@
 clear; close all; clc;
 ds = 0; % 0: KITTI, 1: Malaga, 2: parking
 
-if ds == 0 || 1
-    % good params for kitti and malaga
-    num_first_image = 1; % nr 1 would refer to the first image in the folder
-    bidirect_thresh = inf; % 0.3: good. larger number means more features (but worse quality)
-    last_bootstrap_frame_index = 2; 
-    baseline_thresh = 0.01; % larger number means less features (but better triangulation)
-    maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
-    maxNumTrials_Essential = 20000;
-    max_allowed_point_dist = 80;  %100: good 150: good especially for parking
-    harris_num_image_splits = 1;
-    minQuality_Harris = 0.1;  %0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 15; % larger number means less features
-    harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
-    p3p_pixel_thresh = 2;  % 1: good. 5: not so good. larger number means more features, but worse quality
-    p3p_num_iter = 100000;
-    BA_iter = 2;
-    num_BA_frames = 20;
-    max_iter_BA = 100;
-    num_fixed_frames_BA = 1;
-    absoluteTolerance_BA = 0.001;
-    reprojection_thresh = 10;  
-    plot_stuff = false;
-    enable_plotall = true;
-    disp_stuff = false;
-    enable_bootstrap = true;
-end
-
-if ds == 2
-%     ok for parking
-    bidirect_thresh = 0.2; % TODO  0.3: good. larger number means more features (but worse quality)
-    last_bootstrap_frame_index = 2;  %TODO
-    baseline_thresh = 0.1; % 0.05: good. larger number means less features (but better triangulation)
-    maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
-    maxNumTrials_Essential = 20000;
-    max_allowed_point_dist = 120;  %TODO  100: good 150: good especially for parking
-    harris_num_image_splits = 1;
-    minQuality_Harris = 0.0001;  %TODO  0.001: good. smaller number means more features!
-    nonmax_suppression_radius = 10;
-    harris_rejection_radius = 10; %TODO 10: good for kitti
-    p3p_pixel_thresh = 0.5;  % TODO 1: good. 5: not so good. larger number means more features, 
-                             % but worse quality
-    p3p_num_iter = 10000;
-    BA_iter = 2;
-    num_BA_frames = 20;
-    max_iter_BA = 100;
-    num_fixed_frames_BA = 1;
-    absoluteTolerance_BA = 0.001;
-    reprojection_thresh = 1;  
-    plot_stuff = false;
-    disp_stuff = true;
-    enable_bootstrap = true;
-end
-
+% good params for kitti and malaga
+num_first_image = 1; % nr 1 would refer to the first image in the folder
+bidirect_thresh = 3; % 3: good. larger number means more features (but worse quality)
+last_bootstrap_frame_index = 2; 
+baseline_thresh = 0.001; % 0.001: good. larger number means less features (but better triangulation)
+maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
+maxNumTrials_Essential = 20000;
+harris_num_image_splits = 1;
+minQuality_Harris = 0.001;  %0.001: good. smaller number means more features!
+nonmax_suppression_radius = 15; % larger number means less features
+harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
+p3p_num_iter = 100000;
+reprojection_thresh_p3p = 3;  % 3: good
+BA_iter = 2;
+num_BA_frames = 20;
+max_iter_BA = 100;
+num_fixed_frames_BA = 1;
+absoluteTolerance_BA = 0.001;
+reprojection_thresh = 10;  
+plot_stuff = false;
+enable_plotall = false;
+disp_stuff = true;
+enable_BA = true;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
@@ -165,20 +136,7 @@ for i = 1:last_bootstrap_frame_index
     in_essential = in_essential(keep_reprojected);
     keypoints_start = keypoints_start(keep_reprojected, :);
     keypoints_latest = keypoints_latest(keep_reprojected, :);
-    
-%     T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
-%     T_World = [eye(3) ones(3,1); [0, 0, 0, 1]];
-%     [keep_triang, worldPoints] = triangulatePoints(keypoints_latest', keypoints_start', ...
-%         T_W_C,T_World(:)*ones(1,size(keypoints_latest,1)), ...
-%         ones(1,size(keypoints_latest,1)), K, baseline_thresh, reprojection_thresh);
-%     worldPoints = worldPoints(:, keep_triang);
-%     Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
-%     
-%     in_essential = in_essential(keep_triang);
-%     keypoints_start = keypoints_start(keep_triang, :);
-%     keypoints_latest = keypoints_latest(keep_triang, :);
-
-    
+  
     if disp_stuff
         disp([' number of removed keypoints: ' num2str(sum(~keep_reprojected))]);
     end
@@ -197,23 +155,6 @@ for i = 1:last_bootstrap_frame_index
         disp(['Keypoints in Image nr', num2str(i+1), ': ', ...
             num2str(length(keypoints_start))]);
     end
-    
-    % Plot reprojected Points
-%     if plot_stuff
-%         P_reprojected = reprojectPoints(Points3D(1:3,:)',K^(-1)*Mend, K);
-%         error = max(abs(sum(P_reprojected(in_essential,:)-keypoints_latest(in_essential,:),2)));
-%/nnz(in_essential);
-%         fprintf(['error: ',num2str(error),'\t with ',num2str(nnz(in_essential)),' inlier. \n']);
-%         figure(83)
-%         clf;
-%         imshow(image)
-%         hold on;
-%         plot(P_reprojected(in_essential,1),P_reprojected(in_essential,2),'bx','linewidth',1.5)
-%         hold on;
-%         plot(keypoints_latest(in_essential,1),keypoints_latest(in_essential,2),'ro','linewidth',1.5)
-%         hold on;
-%         pause(0.01);
-%     end
     
     image_prev = image;
 end
@@ -243,31 +184,6 @@ T_World = [eye(3) zeros(3,1); [0, 0, 0, 1]];
 worldPoints = worldPoints(:, keep_triang);
 Points3D = [worldPoints; ones(1, size(worldPoints, 2))];
 
-% keypoints_start = keypoints_start(keep_triang, :);
-% keypoints_latest = keypoints_latest(keep_triang, :);
-
-
-% % second time
-% p1 = [keypoints_start'; ones(1, length(keypoints_start))];
-% pend = [keypoints_latest'; ones(1, length(keypoints_latest))];
-% 
-% cameraParams = cameraParameters('IntrinsicMatrix',K');
-% [E, in_essential] = estimateEssentialMatrix(keypoints_start, ...
-%     keypoints_latest, cameraParams, 'MaxNumTrials', ...
-%         maxNumTrials_Essential, 'MaxDistance', maxDistance_essential);
-% 
-% [Rots,u3] = decomposeEssentialMatrix(E);
-% 
-% [R_C2_W, t_C2_W] = disambiguateRelativePose(Rots,u3,p1,pend,K,K);
-% 
-% T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
-% T_World = [eye(3) zeros(3,1); [0, 0, 0, 1]];
-% [keep_triang, worldPoints] = triangulatePoints(keypoints_latest', keypoints_start', ...
-%     T_W_C,T_World(:)*ones(1,size(keypoints_latest,1)), ...
-%     ones(1,size(keypoints_latest,1)), K, baseline_thresh, reprojection_thresh);
-% worldPoints = worldPoints(:, keep_triang);
-% Points3D = [worldPoints; ones(1, size(worldPoints, 2))];
-
 S = struct;
 S.P = keypoints_latest(keep_triang, :)';
 S.X = Points3D(1:3,:);
@@ -278,19 +194,6 @@ S.Frames = 0 * ones(1, size(S.C, 2));
 
 keypoints_start = keypoints_start(keep_triang, :);
 keypoints_latest = keypoints_latest(keep_triang, :);
-
-% 
-%     T_W_C = [R_C2_W', -R_C2_W' * t_C2_W; [0, 0, 0, 1]];
-%     T_World = [eye(3) ones(3,1); [0, 0, 0, 1]];
-%     [keep_triang, worldPoints] = triangulatePoints(keypoints_latest', keypoints_start', ...
-%         T_W_C,T_World(:)*ones(1,size(keypoints_latest,1)), ...
-%         ones(1,size(keypoints_latest,1)), K, baseline_thresh, reprojection_thresh);
-%     worldPoints = worldPoints(:, keep_triang);
-%     Points3D = [worldPoints'; ones(1, size(worldPoints, 1))];
-%     
-%     in_essential = in_essential(keep_triang);
-%     keypoints_start = keypoints_start(keep_triang, :);
-%     keypoints_latest = keypoints_latest(keep_triang, :);
 
 % Plot stuff
 if plot_stuff
@@ -410,9 +313,21 @@ for i = range
     end
     
     tic
-    [T, S.P, S.X, best_inlier_mask] = ... % T=T_W_C;
+    [T, ~, ~, ~] = ... % T=T_W_C;
         ransacLocalization(S.P, S.X, K, p3p_pixel_thresh, p3p_num_iter);
     toc
+    
+    % we reproject the points on our own and define the threshold for the
+    % points that should get discarded
+    R_C_W = T(1:3, 1:3)';
+    t_C_W = -R_C_W*T(1:3, end);
+    % careful: transpose rotation matrix due to other convention
+    projected_points = worldToImage(cameraParams,R_C_W',t_C_W',S.X');
+    best_inlier_mask = all(abs(sqrt(sum((projected_points' - S.P).^2))) ...
+        < reprojection_thresh_p3p,1);
+    S.P = S.P(:,best_inlier_mask);
+    S.X = S.X(:,best_inlier_mask);
+    
     
     keep_p3p_Pklt = best_inlier_mask;
     
@@ -449,20 +364,15 @@ for i = range
         disp('try to triangulate S.C and S.F');
     end
     
-    % tic
-%     [keep_triang, keep_reprojected, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
-%         S.Frames, K, baseline_thresh, reprojection_thresh);
     [keep_triang, X_new] = triangulatePoints(S.C, S.F, T, S.T, ...
         S.Frames, K, baseline_thresh, reprojection_thresh);
     X_new = X_new(:, keep_triang);
-    % toc
     C_plotall = S.C;
     
     if ~isempty(X_new)
         % delete points that are far away or that lie behind the camera
         [S, keep_P_BA, X_new,keep_camera_angle] = pointSanityCheck(S, keep_P_BA, T, ...
-            X_new, keep_triang, ...
-            max_allowed_point_dist, anglex, angley);
+            X_new, keep_triang, anglex, angley);
     else
         keep_camera_angle = [];
     end
@@ -489,7 +399,7 @@ for i = range
     end
     
     % bundle adjustment
-    if BA_iter == num_BA_frames && enable_bootstrap
+    if BA_iter == num_BA_frames && enable_BA
         % delete all rows in the BA matrices which only contain zeros or
         % only one valid point (they cannot be used for BA
 
@@ -500,7 +410,7 @@ for i = range
         keep_P_BA(untracked_landmark_idx) = [];
         
         [S, keep_P_BA, T, cameraPoses_all] = ...
-            bundle_adjustment(S, cameraPoses_all, i, num_BA_frames, ...
+            bundle_adjustment(S, cameraPoses_all, num_BA_frames, ...
             keep_P_BA, K, max_iter_BA, num_fixed_frames_BA, absoluteTolerance_BA);
         
         if plot_stuff  
@@ -509,9 +419,6 @@ for i = range
             plotBundleAdjustment(cameraPoses_all)
             % toc
         end
-        
-%         BA_iter = 11; % use 2 to make sure that the last camera 
-%                       % from the last bundle adjustment is used again!
         
     else
         BA_iter = BA_iter + 1;
@@ -556,9 +463,7 @@ for i = range
     
     if plot_stuff
         disp('plot continuous')
-        % tic
         plotContinuous(image, X_new, S.X, S.P, S.C, T, K);
-        % toc
 
         disp(['Frames still in S.C' num2str(unique(S.Frames))]);
         plotBarDiagram(S.Frames,Frames_old);

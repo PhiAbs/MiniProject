@@ -1,11 +1,11 @@
 function [S, keep_P_BA, T_refined, cameraPoses_all] = ...
-    bundle_adjustment(S, cameraPoses_all, iter, num_BA_frames, keep_P_BA, ...
+    bundle_adjustment(S, cameraPoses_all, num_BA_frames, keep_P_BA, ...
     K, max_iterations, num_fixed_frames, absoluteTolerance_BA)
 % Do bundle adjustment over a sliding window
 
 iterator = 1;
+view_ids = cameraPoses_all.ViewId(end+1-num_BA_frames:end);
 for BA_i = 1:size(S.P_BA, 1)
-    view_ids = iter+1-num_BA_frames:iter;
     % extract the x and y coordinate in every column and store them as
     % pointTrack objects
     valid_points = (S.P_BA(BA_i, :, 1) > 0);
@@ -52,11 +52,11 @@ for i = 1:num_BA_frames
         - cameraPoses.Location{i};
 end
 
-% disp(['max reprojection error after BA: ' num2str(max(reprojectionErrors))]);
-% disp('BA change in orientation of all matrices combined')
-% disp(num2str(orientation_change_sum));
-% disp('BA change in location of all matrices combined')
-% disp(num2str(location_change_sum));
+disp(['max reprojection error after BA: ' num2str(max(reprojectionErrors))]);
+disp('BA change in orientation of all matrices combined')
+disp(num2str(orientation_change_sum));
+disp('BA change in location of all matrices combined')
+disp(num2str(location_change_sum));
 
 % % update all 3D points that were refined
 S.X_BA = refinedPoints3D;
@@ -66,17 +66,17 @@ S.X_BA = refinedPoints3D;
 S.X = S.X_BA(logical(keep_P_BA), :)';
 
 % only keep points with a small reprojection error
-keep_BA_reprojection = reprojectionErrors < 1;
-keep_reprojection = keep_BA_reprojection(logical(keep_P_BA));
-keep_P_BA = keep_P_BA(keep_BA_reprojection);
-S.X_BA = S.X_BA(keep_BA_reprojection, :);
-S.P_BA = S.P_BA(keep_BA_reprojection, :, :);
-S.X = S.X(:, keep_reprojection);
-S.P = S.P(:, keep_reprojection);
+% keep_BA_reprojection = reprojectionErrors < 1;
+% keep_reprojection = keep_BA_reprojection(logical(keep_P_BA));
+% keep_P_BA = keep_P_BA(keep_BA_reprojection);
+% S.X_BA = S.X_BA(keep_BA_reprojection, :);
+% S.P_BA = S.P_BA(keep_BA_reprojection, :, :);
+% S.X = S.X(:, keep_reprojection);
+% S.P = S.P(:, keep_reprojection);
 
 % store the latest refined camera pose
-T_refined = [refinedPoses.Orientation{num_BA_frames}', ...
-    refinedPoses.Location{num_BA_frames}'; [0,0,0,1]];
+T_refined = [refinedPoses.Orientation{end}', ...
+    refinedPoses.Location{end}'; [0,0,0,1]];
 
 % store the refined camera poses in the table containing all camera poses
 for j = 1:num_BA_frames
