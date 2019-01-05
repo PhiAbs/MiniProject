@@ -11,21 +11,47 @@ maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as 
 maxNumTrials_Essential = 20000;
 harris_num_image_splits = 1;
 minQuality_Harris = 0.001;  %0.001: good. smaller number means more features!
-nonmax_suppression_radius = 15; % larger number means less features
-harris_rejection_radius = 15; %TODO: make it same as nonmax suppression radius? 10: good for kitti
+nonmax_suppression_radius = 15; % 15: good. larger number means less features
+harris_rejection_radius = 15; % 15: good TODO: make it same as nonmax suppression radius? 10: good for kitti
 p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
 p3p_num_iter = 100000;
 reprojection_thresh_p3p = 3;  % 3: good
 BA_iter = 2;
-num_BA_frames = 20;
+num_BA_frames = 20;  % 20: good
 max_iter_BA = 100;
-num_fixed_frames_BA = 1;
+num_fixed_frames_BA = 1;  % 1: good
 absoluteTolerance_BA = 0.001;
 reprojection_thresh = 10;  
 plot_stuff = false;
 enable_plotall = false;
 disp_stuff = true;
 enable_BA = true;
+
+
+% % good params for kitti and malaga
+% num_first_image = 1; % nr 1 would refer to the first image in the folder
+% bidirect_thresh = 3; % 3: good. larger number means more features (but worse quality)
+% last_bootstrap_frame_index = 2; 
+% baseline_thresh = 0.01; % 0.001: good. larger number means less features (but better triangulation)
+% maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
+% maxNumTrials_Essential = 20000;
+% harris_num_image_splits = 1;
+% minQuality_Harris = 0.001;  %0.001: good. smaller number means more features!
+% nonmax_suppression_radius = 10; % 15: good. larger number means less features
+% harris_rejection_radius = 10; % 15: good TODO: make it same as nonmax suppression radius? 10: good for kitti
+% p3p_pixel_thresh = 1;  % 1: good. 5: not so good. larger number means more features, but worse quality
+% p3p_num_iter = 100000;
+% reprojection_thresh_p3p = 1;  % 3: good
+% BA_iter = 2;
+% num_BA_frames = 20;  % 20: good
+% max_iter_BA = 100;
+% num_fixed_frames_BA = 1;  % 1: good
+% absoluteTolerance_BA = 0.001;
+% reprojection_thresh = 10;  
+% plot_stuff = false;
+% enable_plotall = false;
+% disp_stuff = true;
+% enable_BA = true;
 
 if ds == 0
     path = '../datasets/kitti00/kitti';
