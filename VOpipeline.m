@@ -1,7 +1,7 @@
 %% initialize VO Pipeline with Kitty Dataset
 clear all; close all; clc;
 
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 1; % 0: KITTI, 1: Malaga, 2: parking
 
 %% define Path and load parameters
 % path = 'datasets/kitti00/kitti';
@@ -78,6 +78,26 @@ num_fixed_frames_BA = 1;
 absoluteTolerance_BA = 0.001;
 enable_BA = true;
 enable_plot = false;
+
+% % parameters
+% bidirect_thresh = 3; % TODO  0.3: good
+% maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
+% maxNumTrials_Essential = 20000;
+% minQuality_Harris = 0.001;  %TODO  0.1: good
+% p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
+% p3p_num_iter = 10000;
+% reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
+% reprojection_thresh_p3p = 4;
+% triangAngleThres = 0.01;
+% nonmax_suppression_radius = 10;
+% harris_rejection_radius = 10; %TODO 10: good for kitti
+% BA_iter = 2; 
+% num_BA_frames = 10;
+% max_iter_BA = 100;
+% num_fixed_frames_BA = 1;
+% absoluteTolerance_BA = 0.001;
+% enable_BA = true;
+% enable_plot = false;
 
 
 %% Bootstrapping
@@ -215,11 +235,11 @@ for i=3:last_frame
     % get new image
     if ds == 0
         img = uint8(single(imread([path '/00/image_0/' ...
-            sprintf('%06d.png',i+1)])));
+            sprintf('%06d.png',i)])));
     elseif ds == 1
         img = uint8(single(rgb2gray(imread([path ...
             '/malaga-urban-dataset-extract-07_rectified_800x600_Images/' ...
-            left_images(i).name]))));
+            left_images(i+1).name]))));
     elseif ds == 2
         img = uint8(single(im2uint8(rgb2gray(imread([path ...
             sprintf('/images/img_%05d.png',i)])))));
@@ -329,10 +349,10 @@ for i=3:last_frame
     
 
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
-        triangulationAngles > triangAngleThres,...
-        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        t_WC, cameraPoses_all)%, sizes)
+%     plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
+%         triangulationAngles > triangAngleThres,...
+%         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+%         t_WC, cameraPoses_all)%, sizes)
     
     S.findP = [S.findP; NonLms(keep)'];
     S.keepX = [S.keepX; ones(nnz(keep),1)];
