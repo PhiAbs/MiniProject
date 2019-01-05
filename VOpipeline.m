@@ -140,8 +140,8 @@ img_prev = img;
 %     [zeros(3,1) t_WC])
 
 % initialize KLT trackers for continuous mode
-% trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
-% initialize(trackP, S.P, img_prev);
+trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
+initialize(trackP, S.P, img_prev);
 trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(trackC, S.C, img_prev);
 
@@ -162,10 +162,13 @@ for i=3:last_frame
     S.keepX = find(keepC(S.findP));
     S.findP = S.findP(keepC(S.findP));
     S.P = points(S.findP,:); % order is crucial, first S.P then S.C
-    S.X = S.X(S.keepX,:);
+    S.X = S.X(S.keepX,:);   
     S.C = points(keepC,:);
     S.T = S.T(:,keepC);
     S.F = S.F(keepC,:);
+    keepCidx = find(keepC);
+%     S.findP = find(ismember(keepCidx,S.findP(ismember(S.findP,keepCidx))));
+    S.findP = find(ismember(S.findP,keepCidx));
     
     [R_WC, t_WC, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams,...
         'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
