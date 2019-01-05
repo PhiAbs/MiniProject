@@ -29,7 +29,7 @@ minQuality_Harris = 0.001;  %TODO  0.1: good
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 10000;
 reprojection_thresh = 4;  %15: good. 10000: not so good for kitti, good for parking
-reprojection_thresh_p3p = 2;
+reprojection_thresh_p3p = 1;
 triangAngleThres = 0.001;
 nonmax_suppression_radius = 20;
 harris_rejection_radius = 20; %TODO 10: good for kitti
@@ -229,7 +229,9 @@ for i=3:last_frame
     S.keepX = S.keepX(keepP);
 
     % triangulate S.C and S.F
-    Xnew = []; reprojectionErrors = []; triangulationAngles = [];
+    Xnew = []; 
+    reprojectionErrors = []; 
+    triangulationAngles = [];
     M = (K*T_CW)';
     NonLms = find(~ismember([1:size(S.C,1)],S.findP));
     for j=NonLms 
@@ -258,10 +260,10 @@ for i=3:last_frame
     
 
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
-        triangulationAngles > triangAngleThres,...
-        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        t_WC)%, sizes)
+%     plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
+%         triangulationAngles > triangAngleThres,...
+%         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+%         t_WC, cameraPoses_all)%, sizes)
     
     S.findP = [S.findP; NonLms(keep)'];
     S.keepX = [S.keepX; ones(nnz(keep),1)];
@@ -270,15 +272,15 @@ for i=3:last_frame
     S.X = [S.X; Xnew];
     S.P = [S.P; S.C(NonLms(keep),:)];
     % S.P = [S.P; S.C(keep,:)];
-    S.C = S.C(~keep,:);
-    S.T = S.T(:,~keep);
-    S.F = S.F(~keep,:);
-    S.Frames = S.Frames(~keep); 
+%     S.C = S.C(~keep,:);
+%     S.T = S.T(:,~keep);
+%     S.F = S.F(~keep,:);
+%     S.Frames = S.Frames(~keep); 
     % update data for bootstrap
     keep_P_BA = [keep_P_BA; ones(size(Xnew, 1), 1)];
-    S.P_BA(end+1:end+size(Xnew, 1), :, :) = S.C_trace_tracker(keep, :, :);
+    S.P_BA(end+1:end+size(Xnew, 1), :, :) = S.C_trace_tracker(NonLms(keep), :, :);
     S.X_BA = [S.X_BA; Xnew];
-    S.C_trace_tracker = S.C_trace_tracker(~keep, :, :);
+%     S.C_trace_tracker = S.C_trace_tracker(~keep, :, :);
     
     % extract new Keypints
     points = detectHarrisFeatures(img,'MinQuality', minQuality_Harris);
@@ -338,7 +340,8 @@ end
 
 %% Functions
 
-function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,t_WC,sizes)
+function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,...
+    t_WC, cameraPoses_all)
 
 %     figure('name','11','units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
     figure(11)
@@ -385,12 +388,24 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,t_WC,siz
     
     % plot Camera Positions
     subplot(2,3,6)
-    hold on;
-    plot(t_WC(1,:),t_WC(3,:),'rx','linewidth',1)
-    title('Camera Position')
+%     hold on;
+%     plot(t_WC(1,:),t_WC(3,:),'rx','linewidth',1)
+%     title('Camera Position')
+%     xlabel('x')
+%     ylabel('z')
+%     axis equal
+cla;
+for i = 1:size(cameraPoses_all, 1)
+    cam_x(i) = cameraPoses_all.Location{i}(1);
+    cam_z(i)= cameraPoses_all.Location{i}(3);
+end
+%     plot(cameraPoses_all.Location{i}(1), cameraPoses_all.Location{i}(3), 'Marker', 'x');
+plot(cam_x, cam_z, 'rx');
     xlabel('x')
     ylabel('z')
-    axis equal
+axis equal;
+hold on;
+title('Camera Position')
 
 end
 
