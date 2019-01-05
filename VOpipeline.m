@@ -224,7 +224,10 @@ for i=3:last_frame
     keep_Index = keep_Index(keepP);
     keep_P_BA = false(size(keep_P_BA));
     keep_P_BA(keep_Index) = 1;
-    S.P_BA(~keep_P_BA, end, :) = 0;
+%     S.P_BA(~keep_P_BA, end, :) = 0;
+    S.P_BA(~keep_P_BA, :, :) = [];
+    S.X_BA(~keep_P_BA, :, :) = [];
+    keep_P_BA(~keep_P_BA) = [];
     S.findP = S.findP(keepP);
     S.keepX = S.keepX(keepP);
 
