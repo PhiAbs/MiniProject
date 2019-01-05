@@ -23,16 +23,16 @@ addpath('code')
 
 % parameters
 bidirect_thresh = 3; % TODO  0.3: good
-maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
+maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-minQuality_Harris = 0.01;  %TODO  0.1: good
+minQuality_Harris = 0.001;  %TODO  0.1: good
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
-p3p_num_iter = 5000;
-reprojection_thresh = 3;  %15: good. 10000: not so good for kitti, good for parking
-reprojection_thresh_p3p = 3;
-triangAngleThres = 0.01;
-nonmax_suppression_radius = 10;
-harris_rejection_radius = 15; %TODO 10: good for kitti
+p3p_num_iter = 10000;
+reprojection_thresh = 4;  %15: good. 10000: not so good for kitti, good for parking
+reprojection_thresh_p3p = 2;
+triangAngleThres = 0.001;
+nonmax_suppression_radius = 20;
+harris_rejection_radius = 20; %TODO 10: good for kitti
 BA_iter = 2; 
 num_BA_frames = 20;
 max_iter_BA = 100;
