@@ -22,15 +22,22 @@ angley = K(2,3)/K(2,2);
 addpath('code')
 
 % parameters
-bidirect_thresh = 0.3; % TODO  0.3: good
+bidirect_thresh = 3; % TODO  0.3: good
 maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-minQuality_Harris = 0.1;  %TODO  0.1: good
-harris_rejection_radius = 5; %TODO 10: good for kitti
+minQuality_Harris = 0.001;  %TODO  0.1: good
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 5000;
-reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
-triangAngleThres = 0.02;
+reprojection_thresh = 3;  %15: good. 10000: not so good for kitti, good for parking
+triangAngleThres = 0.001;
+nonmax_suppression_radius = 10;
+harris_rejection_radius = 15; %TODO 10: good for kitti
+BA_iter = 2; 
+num_BA_frames = 20;
+max_iter_BA = 100;
+num_fixed_frames_BA = 1;
+absoluteTolerance_BA = 0.001;
+enable_BA = true;
 
 
 %% Bootstrapping
@@ -39,10 +46,11 @@ img0 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',0)])));
 img1 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',1)])));
 img2 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',2)])));
 
-points = detectHarrisFeatures(img0,'MinQuality',0.1);
+points = detectHarrisFeatures(img0,'MinQuality',minQuality_Harris);
+points = nonmaxSuppression(points, nonmax_suppression_radius);
 kps = points.Location;  %keypoint_start
 
-pointTracker = vision.PointTracker('MaxBidirectionalError',0.3);
+pointTracker = vision.PointTracker('MaxBidirectionalError',bidirect_thresh);
 initialize(pointTracker, kps, img0);
 setPoints(pointTracker,kps);
 [kpl,keep] = pointTracker(img1);   % keypoints_latest
@@ -55,12 +63,6 @@ setPoints(pointTracker,kpl);
 kps = kps(keep,:);
 kpl = kpl(keep,:);
 
-% plot to validate
-% figure(1)
-% subplot(2,1,1)
-% showMatchedFeatures(img0,img1,kps,kpl)
-% subplot(2,1,2)
-% stem3(kps(:,1),kps(:,2),confidence,'fill'); view(-25,30);
 
 %% estimate Fundamental Matrix and initial pose
 [E, keep] = estimateEssentialMatrix(kps, ...
@@ -90,38 +92,42 @@ f_inf_homo = inv(K)*[kps ones(length(kps),1)]';
 triangulationAngles = acos(sum(c_inf_homo.*f_inf_homo,1)./...
 (vecnorm(c_inf_homo,2).*vecnorm(f_inf_homo,2)));
 
-% P = linearTriangulation([kps ones(length(kps),1)]',[kpl ones(length(kpl),1)]',(K*[eye(3) zeros(3,1)]),M');
-% subplot(2,1,1)
-% plot3(S.X(:,1),S.X(:,2),S.X(:,3),'*'); view(0,90);
-% xlabel('x')
-% ylabel('y')
-% zlabel('z')
-% grid on;
-
 Xnew_cam = T_CW*[Xnew ones(size(Xnew,1),1)]';
 keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))'...
     & reprojectionErrors < reprojection_thresh...
     & triangulationAngles' > triangAngleThres,2);
 
-%% continious
+%% setup for continuous
 
 S.X = Xnew(keep,:);
 S.P = kpl(keep,:);
 S.C = kpl(~keep,:);
 S.F = kps(~keep,:);
-% S.C = kpl;
-% S.F = kps;
-% S.findP = find(keep);
 T0 = [eye(3) zeros(3,1)];
 S.T = T0(:)*ones(1,size(S.C,1));
-% S.Frames = 2*ones(1,size(S.C,1));
+S.Frames = 0 * ones(1, size(S.C, 1));
+
 % extract new features in 2nd image
 points = detectHarrisFeatures(img2,'MinQuality', minQuality_Harris);
+points = nonmaxSuppression(points, nonmax_suppression_radius);
 kpl=checkIfKeypointIsNew(points.Location', S.P', harris_rejection_radius);
 kpl=kpl';
 S.C = [S.C; kpl];
 S.T = [S.T T_WC(:)*ones(1,size(S.C,1))];
 S.F = [S.F; kpl];
+S.Frames = [S.Frames, 2 * ones(1,size(S.C,1))]; % TODO hardcoded last bootstrap frame
+
+% store data for bundle adjustment
+cameraPoses_all = table;
+cameraPoses_all.ViewId(1) = uint32(2); % TODO: hardcoded number, is that the correct one? we start counting at 0
+cameraPoses_all.Orientation{1} = T_WC(1:3, 1:3);
+cameraPoses_all.Location{1} = T_WC(1:3, end)';
+S.P_BA(:, num_BA_frames, 1) = S.P(:,1);
+S.P_BA(:, num_BA_frames, 2) = S.P(:,2)';
+S.X_BA = S.X; 
+keep_P_BA = ones(size(S.P, 1), 1);
+S.C_trace_tracker(:, num_BA_frames, 1) = S.C(:,1);
+S.C_trace_tracker(:, num_BA_frames, 2) = S.C(:,2);
 
 img = img2;
 clear img0 img1 img2 reprojection_error F T_CW;
@@ -142,6 +148,11 @@ initialize(trackP, S.P, img_prev);
 trackC = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
 initialize(trackC, S.C, img_prev);
 
+cam_x = [];
+cam_z = [];
+
+%% start continuous
+
 for i=3:last_frame
     
     % get new image
@@ -156,6 +167,20 @@ for i=3:last_frame
     S.C = points(keepC,:);
     S.T = S.T(:,keepC);
     S.F = S.F(keepC,:);
+    S.C_trace_tracker(:, 1, :) = [];
+    S.C_trace_tracker(~keepC, :, :) = [];
+    S.C_trace_tracker(:, end+1, :) = points(keepC,:);
+    S.Frames = S.Frames(keepC);
+    
+    % update data for bootstrap: update only the points that can still be
+    % tracked!
+    keep_Index = find(keep_P_BA);
+    keep_Index = keep_Index(keepP);
+    keep_P_BA = false(size(keep_P_BA));
+    keep_P_BA(keep_Index) = 1;
+    S.P_BA(:, 1, :) = [];
+    S.P_BA(keep_P_BA, end+1, 1) = S.P(:,1);
+    S.P_BA(keep_P_BA, end, 2) = S.P(:,2);
     
     [R_WC, t_WC, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams,...
         'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
@@ -165,6 +190,14 @@ for i=3:last_frame
     T_CW = [R_WC',-R_WC'*t_WC];
     S.X = S.X(keepP,:);
     S.P = S.P(keepP,:);
+    
+    % update data for bootstrap: update only the points that can still be
+    % tracked!
+    keep_Index = find(keep_P_BA);
+    keep_Index = keep_Index(keepP);
+    keep_P_BA = false(size(keep_P_BA));
+    keep_P_BA(keep_Index) = 1;
+    S.P_BA(~keep_P_BA, end, :) = 0;
 
     % triangulate S.C and S.F
     Xnew = []; reprojectionErrors = []; triangulationAngles = [];
@@ -183,6 +216,7 @@ for i=3:last_frame
         triangulationAngle = acos(sum(c_inf_homo.*f_inf_homo,1)./...
         (vecnorm(c_inf_homo,2).*vecnorm(f_inf_homo,2)));
         triangulationAngles = [triangulationAngles; triangulationAngle];
+            
     end
     
     Xnew_cam = T_CW*[Xnew ones(size(Xnew,1),1)]';
@@ -190,12 +224,14 @@ for i=3:last_frame
                     & (Xnew_cam(3,:) > 0)' ...
                     & reprojectionErrors < reprojection_thresh ...
                     & triangulationAngles > triangAngleThres,2);
+                
+    
 
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
-        triangulationAngles > triangAngleThres,...
-        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        t_WC)%, sizes)
+%     plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
+%         triangulationAngles > triangAngleThres,...
+%         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+%         t_WC)%, sizes)
     
     Xnew = Xnew(keep,:);
     S.X = [S.X; Xnew];
@@ -203,20 +239,61 @@ for i=3:last_frame
     S.C = S.C(~keep,:);
     S.T = S.T(:,~keep);
     S.F = S.F(~keep,:);
-    % plot3(Xnew(:,1),Xnew(:,2),Xnew(:,3),'*'); view(0,90);
+    S.Frames = S.Frames(~keep); 
+    % update data for bootstrap
+    keep_P_BA = [keep_P_BA; ones(size(Xnew, 1), 1)];
+    S.P_BA(end+1:end+size(Xnew, 1), :, :) = S.C_trace_tracker(keep, :, :);
+    S.X_BA = [S.X_BA; Xnew];
+    S.C_trace_tracker = S.C_trace_tracker(~keep, :, :);
     
     % extract new Keypints
     points = detectHarrisFeatures(img,'MinQuality', minQuality_Harris);
+    points = nonmaxSuppression(points, nonmax_suppression_radius);
     kpl = points.Location;  %keypoint_latest
     
     % make sure that the same keypoint does not get tracked more than once
     kp_new_sorted_out = checkIfKeypointIsNew(kpl', ...
         [(S.P)', (S.C)'], harris_rejection_radius);      
     S.C = [S.C; kp_new_sorted_out'];
+    S.C_trace_tracker(end+1:end+size(kp_new_sorted_out, 2), end, :) = kp_new_sorted_out';
     S.F = [S.F; kp_new_sorted_out'];
     S.T = [S.T, T_WC(:) * ones(1,size(kp_new_sorted_out, 2))];
+    S.Frames = [S.Frames, i*ones(1, size(kp_new_sorted_out, 2))]; 
     setPoints(trackP, S.P);
     setPoints(trackC, S.C);
+    
+            % add newest camera pose to all camera poses
+    cameraPoses_new = table;
+    cameraPoses_new.ViewId(1) = uint32(i);
+    cameraPoses_new.Orientation{1} = T_WC(1:3, 1:3);
+    cameraPoses_new.Location{1} = T_WC(1:3, end)';
+    cameraPoses_all = [cameraPoses_all; cameraPoses_new];
+    
+    % bundle adjustment
+    if BA_iter == num_BA_frames && enable_BA
+        % delete all rows in the BA matrices which only contain zeros or
+        % only one valid point (they cannot be used for BA
+
+        valid_points = S.P_BA(:,:,1) > 0;
+        untracked_landmark_idx = find(sum(valid_points, 2) == 0);
+        S.P_BA(untracked_landmark_idx, :, :) = [];
+        S.X_BA(untracked_landmark_idx, :) = [];
+        keep_P_BA(untracked_landmark_idx) = [];
+        
+        [S, keep_P_BA, T_WC, cameraPoses_all] = ...
+            bundle_adjustment(S, cameraPoses_all, num_BA_frames, ...
+            keep_P_BA, K, max_iter_BA, num_fixed_frames_BA, absoluteTolerance_BA);
+        
+    else
+        BA_iter = BA_iter + 1;
+    end
+    
+    plotBundleAdjustment(cameraPoses_all);
+    
+    cam_x = [cam_x, T_WC(1,4)];
+    cam_z = [cam_z, T_WC(3,4)];
+    
+    i
     
 end
 
