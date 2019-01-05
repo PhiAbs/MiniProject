@@ -79,7 +79,7 @@ kpl = kpl(keep,:);
 % transform to our system
 R_WC = R_WC';
 t_WC = t_WC';
-T_WC = [R_WC,t_WC]
+T_WC = [R_WC,t_WC];
 
 T_CW = [R_WC',-R_WC'*t_WC];
 
@@ -103,11 +103,15 @@ keep = all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))'...
 
 S.X = Xnew(keep,:);
 S.P = kpl(keep,:);
-S.C = kpl(~keep,:);
-S.F = kps(~keep,:);
+% S.C = kpl(~keep,:);
+% S.F = kps(~keep,:);
+S.C = kpl;
+S.F = kps;
+S.findP = find(keep);
+S.keepX = find(keep(S.findP));
 T0 = [eye(3) zeros(3,1)];
 S.T = T0(:)*ones(1,size(S.C,1));
-S.Frames = 0 * ones(1, size(S.C, 1));
+S.Frames = 0*ones(1,size(S.C,1));
 
 % extract new features in 2nd image
 points = detectHarrisFeatures(img2,'MinQuality', minQuality_Harris);
@@ -115,7 +119,7 @@ points = nonmaxSuppression(points, nonmax_suppression_radius);
 kpl=checkIfKeypointIsNew(points.Location', S.P', harris_rejection_radius);
 kpl=kpl';
 S.C = [S.C; kpl];
-S.T = [S.T T_WC(:)*ones(1,size(S.C,1))];
+S.T = [S.T T_WC(:)*ones(1,size(kpl,1))];
 S.F = [S.F; kpl];
 S.Frames = [S.Frames, 2 * ones(1,size(S.C,1))]; % TODO hardcoded last bootstrap frame
 
@@ -135,13 +139,14 @@ img = img2;
 clear img0 img1 img2 reprojection_error F T_CW;
 img_prev = img;
 
-if enable_plot
-    plotall(img_prev,S.X,S.P,Xnew,Xnew,...
-        reprojectionErrors < reprojection_thresh,...
-        triangulationAngles' > triangAngleThres,...
-        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        [zeros(3,1) t_WC])
-end
+% sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
+%      nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
+%         nnz(~(reprojectionErrors<reprojection_thres))];
+% plotall(img_prev,S.X,S.P,Xnew,Xnew,...
+%     reprojectionErrors < reprojection_thresh,...
+%     triangulationAngles' > triangAngleThres,...
+%     all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+%     [zeros(3,1) t_WC])
 
 % initialize KLT trackers for continuous mode
 trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
@@ -161,10 +166,17 @@ for i=3:last_frame
     img = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',i)])));
     
     % track features into new image
-    [points, keepP] = trackP(img);
-    S.P = points(keepP,:);
-    S.X = S.X(keepP,:);
+%     [points, keepP] = trackP(img);
+%     S.P = points(keepP,:);
+%     S.X = S.X(keepP,:);
+%     [pointsP, keepP] = trackP(img);
+%     P = pointsP(keepP,:);
+%     X = S.X(keepP,:);
     [points, keepC] = trackC(img);
+    S.keepX = find(keepC(S.findP));
+    S.findP = S.findP(keepC(S.findP));
+    S.P = points(S.findP,:); % order is crucial, first S.P then S.C
+    S.X = S.X(S.keepX,:);   
     S.C = points(keepC,:);
     S.T = S.T(:,keepC);
     S.F = S.F(keepC,:);
@@ -182,6 +194,9 @@ for i=3:last_frame
     S.P_BA(:, 1, :) = [];
     S.P_BA(keep_P_BA, end+1, 1) = S.P(:,1);
     S.P_BA(keep_P_BA, end, 2) = S.P(:,2);
+    keepCidx = find(keepC);
+%     S.findP = find(ismember(keepCidx,S.findP(ismember(S.findP,keepCidx))));
+    S.findP = find(ismember(S.findP,keepCidx));
     
     [R_WC, t_WC, keepP] = estimateWorldCameraPose(S.P,S.X,cameraParams,...
         'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
@@ -209,11 +224,14 @@ for i=3:last_frame
     keep_P_BA = false(size(keep_P_BA));
     keep_P_BA(keep_Index) = 1;
     S.P_BA(~keep_P_BA, end, :) = 0;
+    S.findP = S.findP(keepP);
+    S.keepX = S.keepX(keepP);
 
     % triangulate S.C and S.F
     Xnew = []; reprojectionErrors = []; triangulationAngles = [];
     M = (K*T_CW)';
-    for j=1: size(S.C,1)
+    NonLms = find(~ismember([1:size(S.C,1)],S.findP));
+    for j=NonLms 
         T_WCold = reshape(S.T(:,j),3,4);
         T_ColdW = [T_WCold(:,1:3)',-T_WCold(:,1:3)'*T_WCold(:,4)];
         Mold = (K*T_ColdW)';
@@ -238,17 +256,19 @@ for i=3:last_frame
                 
     
 
-    if enable_plot            
-        % plot for debugging and tuning
-        plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
-            triangulationAngles > triangAngleThres,...
-            all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-            t_WC)%, sizes)
-    end
+    % plot for debugging and tuning
+    plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
+        triangulationAngles > triangAngleThres,...
+        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+        t_WC)%, sizes)
+    
+    S.findP = [S.findP; NonLms(keep)'];
+    S.keepX = [S.keepX; ones(nnz(keep),1)];
     
     Xnew = Xnew(keep,:);
     S.X = [S.X; Xnew];
-    S.P = [S.P; S.C(keep,:)];
+    S.P = [S.P; S.C(NonLms(keep),:)];
+    % S.P = [S.P; S.C(keep,:)];
     S.C = S.C(~keep,:);
     S.T = S.T(:,~keep);
     S.F = S.F(~keep,:);
@@ -266,7 +286,8 @@ for i=3:last_frame
     
     % make sure that the same keypoint does not get tracked more than once
     kp_new_sorted_out = checkIfKeypointIsNew(kpl', ...
-        [(S.P)', (S.C)'], harris_rejection_radius);      
+          [(S.C)'], harris_rejection_radius);
+%         [(S.P)', (S.C)'], harris_rejection_radius);      
     S.C = [S.C; kp_new_sorted_out'];
     S.C_trace_tracker(end+1:end+size(kp_new_sorted_out, 2), end, :) = kp_new_sorted_out';
     S.F = [S.F; kp_new_sorted_out'];
