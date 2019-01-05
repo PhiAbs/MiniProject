@@ -25,11 +25,12 @@ addpath('code')
 bidirect_thresh = 3; % TODO  0.3: good
 maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
-minQuality_Harris = 0.001;  %TODO  0.1: good
+minQuality_Harris = 0.01;  %TODO  0.1: good
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 5000;
 reprojection_thresh = 3;  %15: good. 10000: not so good for kitti, good for parking
-triangAngleThres = 0.001;
+reprojection_thresh_p3p = 3;
+triangAngleThres = 0.01;
 nonmax_suppression_radius = 10;
 harris_rejection_radius = 15; %TODO 10: good for kitti
 BA_iter = 2; 
@@ -38,6 +39,7 @@ max_iter_BA = 100;
 num_fixed_frames_BA = 1;
 absoluteTolerance_BA = 0.001;
 enable_BA = true;
+enable_plot = false;
 
 
 %% Bootstrapping
@@ -133,14 +135,13 @@ img = img2;
 clear img0 img1 img2 reprojection_error F T_CW;
 img_prev = img;
 
-% sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
-%      nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
-%         nnz(~(reprojectionErrors<reprojection_thres))];
-plotall(img_prev,S.X,S.P,Xnew,Xnew,...
-    reprojectionErrors < reprojection_thresh,...
-    triangulationAngles' > triangAngleThres,...
-    all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-    [zeros(3,1) t_WC])
+if enable_plot
+    plotall(img_prev,S.X,S.P,Xnew,Xnew,...
+        reprojectionErrors < reprojection_thresh,...
+        triangulationAngles' > triangAngleThres,...
+        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+        [zeros(3,1) t_WC])
+end
 
 % initialize KLT trackers for continuous mode
 trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
@@ -186,6 +187,16 @@ for i=3:last_frame
         'MaxNumTrials', p3p_num_iter, 'MaxReprojectionError', p3p_pixel_thresh);
     R_WC = R_WC';
     t_WC = t_WC';
+    
+        % we reproject the points on our own and define the threshold for the
+    % points that should get discarded
+    R_C_W = R_WC';
+    t_C_W = -R_C_W*t_WC;
+    % careful: transpose rotation matrix due to other convention
+    projected_points = worldToImage(cameraParams,R_C_W',t_C_W',S.X);
+    keepP = abs(sqrt(sum((projected_points - S.P).^2, 2))) ...
+        < reprojection_thresh_p3p;
+    
     T_WC = [R_WC, t_WC];
     T_CW = [R_WC',-R_WC'*t_WC];
     S.X = S.X(keepP,:);
@@ -227,11 +238,13 @@ for i=3:last_frame
                 
     
 
-    % plot for debugging and tuning
-%     plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
-%         triangulationAngles > triangAngleThres,...
-%         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-%         t_WC)%, sizes)
+    if enable_plot            
+        % plot for debugging and tuning
+        plotall(img, S.X, S.P, Xnew, S.C, reprojectionErrors < reprojection_thresh, ...
+            triangulationAngles > triangAngleThres,...
+            all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+            t_WC)%, sizes)
+    end
     
     Xnew = Xnew(keep,:);
     S.X = [S.X; Xnew];
@@ -288,7 +301,9 @@ for i=3:last_frame
         BA_iter = BA_iter + 1;
     end
     
-    plotBundleAdjustment(cameraPoses_all);
+    if enable_plot
+        plotBundleAdjustment(cameraPoses_all);
+    end
     
     cam_x = [cam_x, T_WC(1,4)];
     cam_z = [cam_z, T_WC(3,4)];
