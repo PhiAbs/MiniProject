@@ -1,17 +1,55 @@
 %% initialize VO Pipeline with Kitty Dataset
 clear all; close all; clc;
 
+ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+
 %% define Path and load parameters
-path = 'datasets/kitti00/kitti';
-% need to set kitti_path to folder containing "00" and "poses"
-assert(exist('path', 'var') ~= 0);
-ground_truth = load([path '/poses/00.txt']);
-ground_truth = ground_truth(:, [end-8 end]);
-last_frame = 4540;
-% K = load([path '/00/K.txt']);
+% path = 'datasets/kitti00/kitti';
+% % need to set kitti_path to folder containing "00" and "poses"
+% assert(exist('path', 'var') ~= 0);
+% ground_truth = load([path '/poses/00.txt']);
+% ground_truth = ground_truth(:, [end-8 end]);
+% last_frame = 4540;
+% % K = load([path '/00/K.txt']);
+%     K = [7.188560000000e+02 0 6.071928000000e+02
+%         0 7.188560000000e+02 1.852157000000e+02
+%         0 0 1];
+% cameraParams = cameraParameters('IntrinsicMatrix',K');
+
+if ds == 0
+    path = 'datasets/kitti00/kitti';
+    % need to set kitti_path to folder containing "00" and "poses"
+    assert(exist('path', 'var') ~= 0);
+    ground_truth = load([path '/poses/00.txt']);
+    ground_truth = ground_truth(:, [end-8 end]);
+    last_frame = 4540;
     K = [7.188560000000e+02 0 6.071928000000e+02
         0 7.188560000000e+02 1.852157000000e+02
         0 0 1];
+elseif ds == 1 
+    path = 'datasets/malaga-urban-dataset-extract-07';
+    % Path containing the many files of Malaga 7.
+    assert(exist('path', 'var') ~= 0);
+    images = dir([path ...
+        '/malaga-urban-dataset-extract-07_rectified_800x600_Images']);
+    left_images = images(3:2:end);
+    last_frame = length(left_images);
+    K = [621.18428 0 404.0076
+        0 621.18428 309.05989
+        0 0 1];
+elseif ds == 2
+    path = 'datasets/parking';
+    % Path containing images, depths and all...
+    assert(exist('path', 'var') ~= 0);
+    last_frame = 598;
+    K = load([path '/K.txt']);
+     
+    ground_truth = load([path '/poses.txt']);
+    ground_truth = ground_truth(:, [end-8 end]);
+else
+    assert(false);
+end
+
 cameraParams = cameraParameters('IntrinsicMatrix',K');
 
 % camera angles
@@ -23,18 +61,18 @@ addpath('code')
 
 % parameters
 bidirect_thresh = 3; % TODO  0.3: good
-maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
+maxDistance_essential = 0.01;  % 0.1 is too big for parking!! 0.01 might work as well
 maxNumTrials_Essential = 20000;
 minQuality_Harris = 0.001;  %TODO  0.1: good
 p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 10000;
-reprojection_thresh = 4;  %15: good. 10000: not so good for kitti, good for parking
-reprojection_thresh_p3p = 1;
-triangAngleThres = 0.001;
-nonmax_suppression_radius = 20;
-harris_rejection_radius = 20; %TODO 10: good for kitti
+reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
+reprojection_thresh_p3p = 4;
+triangAngleThres = 0.01;
+nonmax_suppression_radius = 10;
+harris_rejection_radius = 10; %TODO 10: good for kitti
 BA_iter = 2; 
-num_BA_frames = 20;
+num_BA_frames = 10;
 max_iter_BA = 100;
 num_fixed_frames_BA = 1;
 absoluteTolerance_BA = 0.001;
@@ -44,9 +82,20 @@ enable_plot = false;
 
 %% Bootstrapping
 
-img0 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',0)])));
-img1 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',1)])));
-img2 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',2)])));
+% store first image
+if ds == 1
+    img0 = uint8(loadImage(ds, 1, path, left_images));
+    img1 = uint8(loadImage(ds, 2, path, left_images));
+    img2 = uint8(loadImage(ds, 3, path, left_images));
+else
+    img0 = uint8(loadImage(ds, 0, path, path));
+    img1 = uint8(loadImage(ds, 1, path, path));
+    img2 = uint8(loadImage(ds, 2, path, path));
+end
+
+% img0 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',0)])));
+% img1 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',1)])));
+% img2 = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',2)])));
 
 points = detectHarrisFeatures(img0,'MinQuality',minQuality_Harris);
 points = nonmaxSuppression(points, nonmax_suppression_radius);
@@ -161,9 +210,26 @@ cam_z = [];
 
 for i=3:last_frame
     
-    % get new image
     img_prev = img;
-    img = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',i)])));
+    
+    % get new image
+    if ds == 0
+        img = uint8(single(imread([path '/00/image_0/' ...
+            sprintf('%06d.png',i+1)])));
+    elseif ds == 1
+        img = uint8(single(rgb2gray(imread([path ...
+            '/malaga-urban-dataset-extract-07_rectified_800x600_Images/' ...
+            left_images(i).name]))));
+    elseif ds == 2
+        img = uint8(single(im2uint8(rgb2gray(imread([path ...
+            sprintf('/images/img_%05d.png',i)])))));
+    else
+        assert(false);
+    end
+    
+    % get new image
+%     img_prev = img;
+%     img = uint8(single(imread([path '/00/image_0/' sprintf('%06d.png',i)])));
     
     % track features into new image
 %     [points, keepP] = trackP(img);
@@ -204,7 +270,7 @@ for i=3:last_frame
     R_WC = R_WC';
     t_WC = t_WC';
     
-        % we reproject the points on our own and define the threshold for the
+    % we reproject the points on our own and define the threshold for the
     % points that should get discarded
     R_C_W = R_WC';
     t_C_W = -R_C_W*t_WC;
@@ -224,10 +290,10 @@ for i=3:last_frame
     keep_Index = keep_Index(keepP);
     keep_P_BA = false(size(keep_P_BA));
     keep_P_BA(keep_Index) = 1;
-%     S.P_BA(~keep_P_BA, end, :) = 0;
-    S.P_BA(~keep_P_BA, :, :) = [];
-    S.X_BA(~keep_P_BA, :, :) = [];
-    keep_P_BA(~keep_P_BA) = [];
+    S.P_BA(~keep_P_BA, end, :) = 0;
+%     S.P_BA(~keep_P_BA, :, :) = [];
+%     S.X_BA(~keep_P_BA, :, :) = [];
+%     keep_P_BA(~keep_P_BA) = [];
     S.findP = S.findP(keepP);
     S.keepX = S.keepX(keepP);
 
@@ -263,10 +329,10 @@ for i=3:last_frame
     
 
     % plot for debugging and tuning
-%     plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
-%         triangulationAngles > triangAngleThres,...
-%         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-%         t_WC, cameraPoses_all)%, sizes)
+    plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
+        triangulationAngles > triangAngleThres,...
+        all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
+        t_WC, cameraPoses_all)%, sizes)
     
     S.findP = [S.findP; NonLms(keep)'];
     S.keepX = [S.keepX; ones(nnz(keep),1)];
