@@ -139,14 +139,18 @@ img = img2;
 clear img0 img1 img2 reprojection_error F T_CW;
 img_prev = img;
 
-% sizes = [1 size(S.P,1) size(S.C,1) 0 ... 
-%      nnz(~(all((abs(S.X(:,1:2)-t_WC(1:2)')<[anglex angley].*(S.X(:,3)-t_WC(3))),2)))...
-%         nnz(~(reprojectionErrors<reprojection_thres))];
-plotall(img_prev,S.X,S.P,Xnew,Xnew,...
-    reprojectionErrors < reprojection_thresh,...
+
+sizes = [0 0 0 0; 2 size(S.P,2) nnz(~keep) nnz(keep)];  
+t_WC_BA = [0 0 0; T_WC(1:3,4)'];
+X_hist = S.X;
+
+plotall(img_prev, S.X, S.P, S.X, S.C([keep;true(length(kpl),1)],:), ...
+    reprojectionErrors < reprojection_thresh, ...
     triangulationAngles' > triangAngleThres,...
     all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-    [zeros(3,1) t_WC],cameraPoses_all)
+    T_WC, t_WC_BA', sizes, anglex)
+
+pause(5)
 
 % initialize KLT trackers for continuous mode
 trackP = vision.PointTracker('MaxBidirectionalError', bidirect_thresh);
@@ -260,10 +264,17 @@ for i=3:last_frame
     
 
     % plot for debugging and tuning
-    plotall(img, S.X, S.P, Xnew, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
+    sizes=[sizes; i size(S.P,1) size(S.C(NonLms,:),1) nnz(keep)];    
+    t_WC_BA = [t_WC_BA; cameraPoses_all.Location{end}];
+    X_hist = [X_hist; S.X];
+    if size(sizes,1)>5
+        sizes(1,:)=[];
+    end
+    
+    plotall(img, X_hist, S.P, S.X, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
         triangulationAngles > triangAngleThres,...
         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        t_WC, cameraPoses_all)%, sizes)
+        T_WC, t_WC_BA', sizes, anglex)
     
     S.findP = [S.findP; NonLms(keep)'];
     S.keepX = [S.keepX; ones(nnz(keep),1)];
@@ -340,14 +351,17 @@ end
 
 %% Functions
 
-function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,...
-    t_WC, cameraPoses_all)
+function plotall(image,Xhist,P,X,C,keepReprojection,keepAngle,keepBehind,...
+    T, t_BA, sizes, anglex)
 
-%     figure('name','11','units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
+    cam = T*[-anglex*10 0 anglex*10; 0 0 0; 10 0 10; 1 1 1];
+
+    % figure('name','11','units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
     figure(11)
     set(gcf,'units','normalized','outerposition',[0.1 0.1 0.85 0.8]);
     % plot upper image with 3D correspondences
-    subplot(2,3,1:3)
+   
+    subplot(2,5,1:3)
     hold off;
     imshow(image);
     hold on;
@@ -358,55 +372,58 @@ function plotall(image,X,P,Xnew,C,keepReprojection,keepAngle,keepBehind,...
         [0;C(keepAngle&keepReprojection&keepBehind,2)],...
         'yo','linewidth',1.5)
     plot(P(:,1),P(:,2),'r*','linewidth',1.5)
-    legend('ReprojectionError is too big',...
+    legend({'ReprojectionError is too big',...
         'Angle too small',...
-        'Triangulated behind camera',...
+        'outside viewing angle',...
         'newly triangulated',...
-        'old 3D correspondences')
+        'old 3D landmarks'},'FontSize',6)
     title('image with 3D correspondences and new kps')
     
+    % bar diagram with sizes of different matrices
+    subplot(2,5,6)
+    bar(sizes(:,1),sizes(:,2:end))
+    legend({'#-landmarks','#-tracked keypoints','#-newly triangulated'},'FontSize',6)
+    title('Array sizes over frames')
     
-%     % bar diagram with sizes of different matrices
-%     subplot(2,3,4)
-%     bar(sizes(:,1),sizes(:,2:end))
-%     legend('#-landmarks','#-tracked keypoints','#-newly triangulated',...
-%         '#-outside viewing angle','#-error too big')
-%     title('Array sizes over frames')
-    
-    
-    % plot lower left as 2D point cloud
-    subplot(2,3,5)
-    hold on;
-    plot(Xnew(keepAngle&keepReprojection&keepBehind,1),Xnew(keepAngle&keepReprojection&keepBehind,3),...
-        'bx','linewidth',1.5);
-    plot(X(:,1),X(:,3),'rx','linewidth',1);
-    legend('newly triangulated','old landmarks')
+    % plot lower middle as 2D point cloud
+    subplot(2,5,7)
+    plot(Xhist(:,1),Xhist(:,3),'bx',X(:,1),X(:,3),'rx','linewidth',1);
+    legend({'old landmarks','currently visible'},'FontSize',6)
     title('2D Pointcloud')
     xlabel('x')
     ylabel('z')
     
-    
-    % plot Camera Positions
-    subplot(2,3,6)
-%     hold on;
-%     plot(t_WC(1,:),t_WC(3,:),'rx','linewidth',1)
-%     title('Camera Position')
-%     xlabel('x')
-%     ylabel('z')
-%     axis equal
-cla;
-for i = 1:size(cameraPoses_all, 1)
-    cam_x(i) = cameraPoses_all.Location{i}(1);
-    cam_z(i)= cameraPoses_all.Location{i}(3);
-end
-%     plot(cameraPoses_all.Location{i}(1), cameraPoses_all.Location{i}(3), 'Marker', 'x');
-plot(cam_x, cam_z, 'rx');
+    % plot lower right Camera Positions
+    subplot(2,5,8)
+    cla;
+    if size(t_BA,2)<21 
+        plot([0 t_BA(1,:) T(1,4)],[0 t_BA(3,:) T(3,4)],'rx','linewidth',1)
+        legend({'Camera BA'},'FontSize',5)
+    else
+        plot([t_BA(1,end-19:end) T(1,4)],[t_BA(3,end-19:end) T(3,4)],'rx',...
+            [0 t_BA(1,1:end-20)],[0 t_BA(3,1:end-20)],'kx',...
+            T(1,4),T(3,4),'bo','linewidth',1)
+        legend({'cam BA','cam fixed'},'FontSize',6)
+    end
+    title('Camera Position')
     xlabel('x')
     ylabel('z')
-axis equal;
-hold on;
-title('Camera Position')
-
+    axis equal
+    
+    subplot(2,5,[4 5 9 10])
+    cla;
+    if size(t_BA)<21 
+        plot(t_BA(1,:),t_BA(3,:),'.b','linewidth',3)
+    else
+        plot(t_BA(1,:),t_BA(3,:),'.b','linewidth',3)
+    end
+    hold on;
+    plot(X(:,1),X(:,3),'rx','linewidth',1)
+    plot(cam(1,:),cam(3,:),'g','linewidth',2)
+    legend({'cam pos','landmarks','cam viewing angle'},'FontSize',6)
+    title('last 20 cam pos and current Landmarks')
+    axis equal;
+    
 end
 
 
