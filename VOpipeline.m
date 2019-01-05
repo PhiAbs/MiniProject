@@ -174,6 +174,7 @@ for i=3:last_frame
 %     X = S.X(keepP,:);
     [points, keepC] = trackC(img);
     S.keepX = find(keepC(S.findP));
+    keepP = keepC(S.findP);
     S.findP = S.findP(keepC(S.findP));
     S.P = points(S.findP,:); % order is crucial, first S.P then S.C
     S.X = S.X(S.keepX,:);   
