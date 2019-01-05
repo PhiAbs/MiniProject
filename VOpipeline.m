@@ -30,7 +30,7 @@ p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
 p3p_num_iter = 10000;
 reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
 reprojection_thresh_p3p = 2;
-triangAngleThres = 0.01;
+triangAngleThres = 0.015;
 nonmax_suppression_radius = 10;
 harris_rejection_radius = 10; %TODO 10: good for kitti
 BA_iter = 2; 
@@ -260,10 +260,17 @@ for i=3:last_frame
                     & (Xnew_cam(3,:) > 0)' ...
                     & reprojectionErrors < reprojection_thresh ...
                     & triangulationAngles > triangAngleThres,2);
-                
     
-
     % plot for debugging and tuning
+%     minQuality_Harris = 0.1;
+%     reprojection_thresh_p3p = 2;
+%     if size(S.P,1) < 20
+%         minQuality_Harris = 0.01;
+%         if size(S.P,1) < 10
+%             reprojection_thresh_p3p = 4;
+%         end
+%     end
+
     sizes=[sizes; i size(S.P,1) size(S.C(NonLms,:),1) nnz(keep)];    
     t_WC_BA = [t_WC_BA; cameraPoses_all.Location{end}];
     X_hist = [X_hist; S.X];
@@ -387,7 +394,8 @@ function plotall(image,Xhist,P,X,C,keepReprojection,keepAngle,keepBehind,...
     
     % plot lower left as 2D point cloud
     subplot(5,8,[17:19,25:27,33:35])
-    plot(Xhist(:,1),Xhist(:,3),'bx',X(:,1),X(:,3),'rx','linewidth',1);
+    plot(Xhist(:,1),Xhist(:,3),'bx',X(:,1),X(:,3),'rx',T(1,4),T(3,4),'g+',...
+        cam(1,:),cam(3,:),'g','linewidth',1);
     legend({'old landmarks','currently visible'},'FontSize',8)
     title('2D Pointcloud')
     xlabel('x')
