@@ -1,9 +1,11 @@
 # MiniProject
 
-Main file: VOpipeline.m
+Main executable file that runs the pipeline: VOpipeline.m
 
 The datasets are not included in the submission. They can be downloaded and 
-stored in a folder called "datasets". The folder structure should look like this:
+stored in a folder called "datasets". The folder datasets should be placed at 
+the same level as the VOpipeline.m-file and as the code folder.
+The folder structure should look like this:
 
 MiniProject 
 - code
@@ -12,8 +14,11 @@ MiniProject
     - kitti00
     - malaga-urban-dataset-extract-07
     - parking
+- VOpipeline.m
+
 
 Run the pipeline: 
-- open the file VOpipeline.m (outside of folder "code")
+- clone the 'Master' branch onto your machine
+- open the file VOpipeline.m within the MiniProject folder (outside of folder "code")
 - choose the dataset you want to run with the parameter "ds" 
-- run the file VOpipeline.m
+- run the script-file 'VOpipeline.m'
