@@ -15,6 +15,4 @@ for i = 1:length(kp_tracked)
     distance = sqrt(sum((kp_new - kp_tracked(:,i)).^2));
     kp_new = kp_new(:,distance > threshold);
 end
-
-
-
+end
