@@ -2,7 +2,7 @@
 clear all; close all; clc;
 
 % choose your dataset
-ds = 0; % 0: KITTI, 1: Malaga, 2: parking
+ds = 2; % 0: KITTI, 1: Malaga, 2: parking
 
 %% define Path and load parameters
 if ds == 0
@@ -48,26 +48,46 @@ angley = K(2,3)/K(2,2);
 % paths to functions
 addpath('code')
 
-% parameters
+% parameters for malaga
+% last_bootstrap_frame = 2;
+% bidirect_thresh = 3; % 
+% maxDistance_essential = 0.1;  
+% maxNumTrials_Essential = 20000;
+% minQuality_Harris = 0.0001;  % first try: 0.01
+% p3p_pixel_thresh = 1;  
+% p3p_num_iter = 10000;
+% reprojection_thresh = 1;  
+% reprojection_thresh_p3p = 2;
+% triangAngleThres = 0.005;    % first try: 0.01
+% nonmax_suppression_radius = 10;
+% harris_rejection_radius = 10; 
+% BA_iter = 2; 
+% num_BA_frames = 10;
+% max_iter_BA = 100;
+% num_fixed_frames_BA = 1;
+% absoluteTolerance_BA = 0.001;
+% enable_BA = true;
+% enable_plot = false;
+
 last_bootstrap_frame = 2;
-bidirect_thresh = 3; % TODO  0.3: good
-maxDistance_essential = 0.1;  % 0.1 is too big for parking!! 0.01 might work as well
+bidirect_thresh = 3; % 
+maxDistance_essential = 0.001;  
 maxNumTrials_Essential = 20000;
-minQuality_Harris = 0.01;  %TODO  0.1: good
-p3p_pixel_thresh = 1;  % TODO 1: good. 5: not so good
+minQuality_Harris = 0.001;  
+p3p_pixel_thresh = 1;  
 p3p_num_iter = 10000;
-reprojection_thresh = 1;  %15: good. 10000: not so good for kitti, good for parking
-reprojection_thresh_p3p = 2;
-triangAngleThres = 0.015;
+reprojection_thresh = 3;  
+reprojection_thresh_p3p = 3;
+triangAngleThres = 0.005;
 nonmax_suppression_radius = 10;
-harris_rejection_radius = 10; %TODO 10: good for kitti
+harris_rejection_radius = 10; 
 BA_iter = 2; 
-num_BA_frames = 20;
+num_BA_frames = 10;
 max_iter_BA = 100;
 num_fixed_frames_BA = 1;
 absoluteTolerance_BA = 0.001;
 enable_BA = true;
-enable_plot = false;
+enable_plot_BA = false;
 
 
 %% Bootstrapping
@@ -172,14 +192,14 @@ img_prev = img;
 
 
 sizes = [0 0 0 0; 2 size(S.P,2) nnz(~keep) nnz(keep)];  
-t_WC_BA = [0 0 0; T_WC(1:3,4)'];
+% t_WC_BA = [0 0 0; T_WC(1:3,4)'];
 X_hist = S.X;
 
 plotall(img_prev, S.X, S.P, S.X, S.C([keep;true(length(kpl),1)],:), ...
     reprojectionErrors < reprojection_thresh, ...
     triangulationAngles' > triangAngleThres,...
     all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-    T_WC, t_WC_BA', sizes, anglex)
+    T_WC, cameraPoses_all.Location, sizes, anglex, num_BA_frames)
 
 pause(5)
 
@@ -301,7 +321,7 @@ for i=3:last_frame
                     & triangulationAngles > triangAngleThres,2);
 
     sizes=[sizes; i size(S.P,1) size(S.C(NonLms,:),1) nnz(keep)];    
-    t_WC_BA = [t_WC_BA; cameraPoses_all.Location{end}];
+%     t_WC_BA = [t_WC_BA; cameraPoses_all.Location{end}];
     X_hist = [X_hist; S.X];
     
     if size(sizes,1)>5
@@ -311,7 +331,7 @@ for i=3:last_frame
     plotall(img, X_hist, S.P, S.X, S.C(NonLms,:), reprojectionErrors < reprojection_thresh, ...
         triangulationAngles > triangAngleThres,...
         all((abs(Xnew_cam(1:2, :))<[anglex; angley].*Xnew_cam(3, :))',2),...
-        T_WC, t_WC_BA', sizes, anglex)
+        T_WC, cameraPoses_all.Location, sizes, anglex, num_BA_frames)
     
     S.findP = [S.findP; NonLms(keep)'];
     S.keepX = [S.keepX; ones(nnz(keep),1)];
@@ -367,7 +387,7 @@ for i=3:last_frame
         BA_iter = BA_iter + 1;
     end
     
-    if enable_plot
+    if enable_plot_BA
         plotBundleAdjustment(cameraPoses_all);
     end    
 end

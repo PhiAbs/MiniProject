@@ -1,7 +1,11 @@
 %% Functions
 
 function plotall(image,Xhist,P,X,C,keepReprojection,keepAngle,keepBehind,...
-    T, t_BA, sizes, anglex)
+    T, camera_positions, sizes, anglex, num_BA_frames)
+
+    for i=1:size(camera_positions, 1)
+        t_BA(:,i) = camera_positions{i}';
+    end
 
     cam = T*[-anglex*5 0 anglex*5; 0 0 0; 5 0 5; 1 1 1];
 
@@ -35,24 +39,24 @@ function plotall(image,Xhist,P,X,C,keepReprojection,keepAngle,keepBehind,...
     title('Array sizes over frames')
     
     % plot lower left as 2D point cloud
-    subplot(5,8,[17:19,25:27,33:35])
-    plot(Xhist(:,1),Xhist(:,3),'bx',X(:,1),X(:,3),'rx',T(1,4),T(3,4),'g+',...
-        cam(1,:),cam(3,:),'g','linewidth',1);
-    legend({'old landmarks','currently visible'},'FontSize',8)
-    title('2D Pointcloud')
-    xlabel('x')
-    ylabel('z')
-    axis equal
+%     subplot(5,8,[17:19,25:27,33:35])
+%     plot(Xhist(:,1),Xhist(:,3),'bx',X(:,1),X(:,3),'rx',T(1,4),T(3,4),'g+',...
+%         cam(1,:),cam(3,:),'g','linewidth',1);
+%     legend({'old landmarks','currently visible'},'FontSize',8)
+%     title('2D Pointcloud')
+%     xlabel('x')
+%     ylabel('z')
+%     axis equal
     
     % plot lower middle Camera Positions
-    subplot(5,8,[20:22,28:30,36:38])
+    subplot(5,8,[17:22,25:30,33:38])
     cla;
-    if size(t_BA,2)<21 
+    if size(t_BA,2)<num_BA_frames+1 
         plot([0 t_BA(1,:) T(1,4)],[0 t_BA(3,:) T(3,4)],'rx','linewidth',1)
         legend({'Camera BA'},'FontSize',5)
     else
-        plot([t_BA(1,end-19:end) T(1,4)],[t_BA(3,end-19:end) T(3,4)],'rx',...
-            [0 t_BA(1,1:end-20)],[0 t_BA(3,1:end-20)],'kx',...
+        plot([t_BA(1,end+1-num_BA_frames:end) T(1,4)],[t_BA(3,end+1-num_BA_frames:end) T(3,4)],'rx',...
+            [0 t_BA(1,1:end-num_BA_frames)],[0 t_BA(3,1:end-num_BA_frames)],'kx',...
             T(1,4),T(3,4),'bo','linewidth',1)
         legend({'cam BA','cam fixed'},'FontSize',8)
     end
