@@ -18,7 +18,7 @@ MiniProject
 
 
 Run the pipeline: 
-- clone the 'Master' branch onto your machine
+- clone the 'master' branch onto your machine
 - open the file VOpipeline.m within the MiniProject folder (outside of folder "code")
 - choose the dataset you want to run with the parameter "ds" 
 - run the script-file 'VOpipeline.m'
